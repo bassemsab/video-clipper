@@ -27,7 +27,7 @@ const videoNameDisplay = document.getElementById('videoNameDisplay');
 const seekSlider = document.getElementById('seekSlider');
 const btnPlayToggle = document.getElementById('btnPlayToggle');
 // Floating Toast Notification system
-function showToast(message, type = 'info') {
+function showToast(message, type = 'info', actionPath = null) {
     let toast = document.getElementById('toastNotification');
     if (!toast) {
         toast = document.createElement('div');
@@ -44,15 +44,35 @@ function showToast(message, type = 'info') {
     if (type === 'success') icon = '✅';
     if (type === 'error') icon = '❌';
     
-    toast.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-message">${message}</span>`;
+    let actionBtnHtml = '';
+    if (actionPath) {
+        const cleanPath = actionPath.replace(/\\/g, '\\\\');
+        actionBtnHtml = `<button class="toast-action-btn" onclick="revealPathInFinder('${cleanPath}')">Show in Finder</button>`;
+    }
+    
+    toast.innerHTML = `
+        <span class="toast-icon">${icon}</span>
+        <div class="toast-content-wrapper">
+            <span class="toast-message">${message}</span>
+            ${actionBtnHtml}
+        </div>
+    `;
     
     if (window.toastTimeout) {
         clearTimeout(window.toastTimeout);
     }
     window.toastTimeout = setTimeout(() => {
         toast.classList.remove('show');
-    }, 5000); // 5 seconds display
+    }, actionPath ? 8000 : 5000);
 }
+
+window.revealPathInFinder = async function(path) {
+    try {
+        await invoke('show_in_finder', { path });
+    } catch (e) {
+        console.error("Failed to reveal path:", e);
+    }
+};
 
 // Add play/pause click handler on the video element itself
 if (videoPlayer) {
@@ -372,7 +392,7 @@ async function extractAllFrames() {
     try {
         const res = await invoke('extract_frames', { start, end, fps });
         if (res.success) {
-            showToast(res.message, 'success');
+            showToast(res.message, 'success', res.data);
         } else {
             showToast(res.error, 'error');
         }
@@ -395,7 +415,7 @@ async function extractSingleFrame() {
     try {
         const res = await invoke('extract_frame', { time });
         if (res.success) {
-            showToast(res.message, 'success');
+            showToast(res.message, 'success', res.data);
         } else {
             showToast(res.error, 'error');
         }
@@ -569,7 +589,7 @@ async function saveFramesGridToDisk() {
         const videoPath = document.getElementById('fullVideoPathDisplay').innerText;
         const res = await invoke('save_image_to_disk', { base64Data, videoPath, isGrid: true });
         if (res.success) {
-            showToast(res.message, 'success');
+            showToast(res.message, 'success', res.data);
         } else {
             throw new Error(res.error || res.message);
         }

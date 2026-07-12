@@ -815,6 +815,91 @@ fn extract_frame(time: f64, state: State<'_, AppState>) -> ApiResponse<String> {
 }
 
 #[tauri::command]
+fn show_in_finder(path: String) -> ApiResponse<String> {
+    #[cfg(target_os = "macos")]
+    {
+        match Command::new("open").arg("-R").arg(&path).output() {
+            Ok(out) if out.status.success() => ApiResponse {
+                success: true,
+                message: "Revealed in Finder".to_string(),
+                data: Some(path),
+                error: None,
+                needs_manual_connect: None,
+            },
+            Ok(out) => {
+                let err = String::from_utf8_lossy(&out.stderr);
+                ApiResponse {
+                    success: false,
+                    message: "".to_string(),
+                    data: None,
+                    error: Some(format!("Failed to reveal in Finder: {}", err)),
+                    needs_manual_connect: None,
+                }
+            }
+            Err(e) => ApiResponse {
+                success: false,
+                message: "".to_string(),
+                data: None,
+                error: Some(e.to_string()),
+                needs_manual_connect: None,
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let clean_path = path.replace('/', "\\");
+        match Command::new("explorer.exe").arg(format!("/select,\"{}\"", clean_path)).output() {
+            Ok(out) if out.status.success() => ApiResponse {
+                success: true,
+                message: "Revealed in Explorer".to_string(),
+                data: Some(path),
+                error: None,
+                needs_manual_connect: None,
+            },
+            Ok(out) => {
+                let err = String::from_utf8_lossy(&out.stderr);
+                ApiResponse {
+                    success: false,
+                    message: "".to_string(),
+                    data: None,
+                    error: Some(format!("Failed to reveal in Explorer: {}", err)),
+                    needs_manual_connect: None,
+                }
+            }
+            Err(e) => ApiResponse {
+                success: false,
+                message: "".to_string(),
+                data: None,
+                error: Some(e.to_string()),
+                needs_manual_connect: None,
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let parent = Path::new(&path).parent().unwrap_or(Path::new(".")).to_string_lossy().to_string();
+        match Command::new("xdg-open").arg(&parent).output() {
+            Ok(out) if out.status.success() => ApiResponse {
+                success: true,
+                message: "Opened parent folder".to_string(),
+                data: Some(path),
+                error: None,
+                needs_manual_connect: None,
+            },
+            _ => ApiResponse {
+                success: false,
+                message: "".to_string(),
+                data: None,
+                error: Some("Failed to open folder".to_string()),
+                needs_manual_connect: None,
+            }
+        }
+    }
+}
+
+#[tauri::command]
 fn save_image_to_disk(base64_data: String, video_path: String, is_grid: bool) -> ApiResponse<String> {
     // 1. Decode base64 image data to bytes
     let clean_base64 = base64_data
@@ -960,7 +1045,8 @@ pub fn run() {
             extract_frames,
             extract_frame,
             write_image_to_clipboard,
-            save_image_to_disk
+            save_image_to_disk,
+            show_in_finder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
