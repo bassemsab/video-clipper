@@ -1047,9 +1047,15 @@ pub fn run() {
             {
                 if let Ok(exe_path) = std::env::current_exe() {
                     if exe_path.to_string_lossy().contains("/Applications/Video Clipper.app") {
-                        let build_app_path = std::path::PathBuf::from("/Users/bassem/Documents/projects/video-clipper/src-tauri/target/release/bundle/macos/Video Clipper.app");
-                        if build_app_path.exists() {
-                            let _ = std::fs::remove_dir_all(&build_app_path);
+                        let possible_paths = vec![
+                            "/Users/bassem/Documents/projects/video-clipper/src-tauri/target/release/bundle/macos/Video Clipper.app",
+                            "/Users/bassem/video-clipper/src-tauri/target/release/bundle/macos/Video Clipper.app",
+                        ];
+                        for path in possible_paths {
+                            let build_app_path = std::path::PathBuf::from(path);
+                            if build_app_path.exists() {
+                                let _ = std::fs::remove_dir_all(&build_app_path);
+                            }
                         }
                     }
                 }
