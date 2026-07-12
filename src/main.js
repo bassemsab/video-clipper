@@ -6,6 +6,7 @@ let activeDeviceId = null;
 let isRecording = false;
 let adbReady = false;
 let checkAdbInterval = null;
+let lastStatusDevices = [];
 
 // HTML Elements
 const landingState = document.getElementById('landingState');
@@ -93,12 +94,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedPath = localStorage.getItem('currentVideoPath');
     if (savedPath) {
         loadVideoPath(savedPath);
+    } else {
+        startDevicePolling();
     }
     const settingsOpen = localStorage.getItem('settingsOpen');
     if (settingsOpen === 'true') {
         openSettings();
     }
 });
+
+let devicePollingInterval = null;
+
+function startDevicePolling() {
+    if (devicePollingInterval) return;
+    checkAdbStatus();
+    devicePollingInterval = setInterval(checkAdbStatus, 3000);
+}
+
+function stopDevicePolling() {
+    if (devicePollingInterval) {
+        clearInterval(devicePollingInterval);
+        devicePollingInterval = null;
+    }
+}
 
 // Drag & drop highlight for drop-zone
 const dropZone = document.getElementById('dropZone');
@@ -139,6 +157,7 @@ async function loadVideoPath(path) {
         if (response.success) {
             // Save path to restore on HMR/reloads
             localStorage.setItem('currentVideoPath', path);
+            stopDevicePolling();
             
             // Update video element source
             const assetUrl = window.__TAURI__.core.convertFileSrc(path);
@@ -317,6 +336,7 @@ function goHome() {
     btnSettings.style.display = 'block';
     editorState.style.display = 'none';
     landingState.style.display = 'flex';
+    startDevicePolling();
 }
 
 // Extract Frames
@@ -511,6 +531,16 @@ async function copyFramesGridToClipboard() {
 }
 
 // ADB / Recording Controls
+function updateRecordButtonLabel() {
+    if (isRecording) return;
+    const activeDevice = lastStatusDevices.find(d => d.name === activeDeviceId);
+    if (activeDevice && activeDevice.platform === 'ios') {
+        btnRecord.innerHTML = '📱 Record iOS Simulator';
+    } else {
+        btnRecord.innerHTML = '📱 Record Android Screen (ADB)';
+    }
+}
+
 async function toggleRecording() {
     if (isRecording) {
         // Stop recording
@@ -524,7 +554,7 @@ async function toggleRecording() {
                 const res = await invoke('stop_recording', { deviceId: activeDeviceId });
                 if (res.success) {
                     isRecording = false;
-                    btnRecord.innerHTML = '📱 Record Android Screen (ADB)';
+                    updateRecordButtonLabel();
                     btnRecord.classList.remove('recording-active');
                     btnRecord.disabled = false;
                     recordingStatus.style.display = 'none';
@@ -544,6 +574,7 @@ async function toggleRecording() {
         // Pre-flight check
         try {
             const status = await invoke('get_adb_status');
+            lastStatusDevices = status.devices || [];
             if (!status.installed || status.devices.length === 0) {
                 openSettings();
                 return;
@@ -580,7 +611,7 @@ async function toggleRecording() {
 
 function resetRecordButton() {
     isRecording = false;
-    btnRecord.innerHTML = '📱 Record Android Screen (ADB)';
+    updateRecordButtonLabel();
     btnRecord.classList.remove('recording-active');
     btnRecord.disabled = false;
     recordingStatus.style.display = 'none';
@@ -590,18 +621,15 @@ function resetRecordButton() {
 function openSettings() {
     settingsModal.style.display = 'flex';
     localStorage.setItem('settingsOpen', 'true');
-    checkAdbStatus();
-    if (!checkAdbInterval) {
-        checkAdbInterval = setInterval(checkAdbStatus, 3000);
-    }
+    startDevicePolling();
 }
 
 function closeSettings() {
     settingsModal.style.display = 'none';
     localStorage.removeItem('settingsOpen');
-    if (checkAdbInterval) {
-        clearInterval(checkAdbInterval);
-        checkAdbInterval = null;
+    // Stop polling if we are not on the landing page anymore (e.g. editor opened somehow, though unlikely)
+    if (landingState.style.display === 'none') {
+        stopDevicePolling();
     }
 }
 
@@ -612,6 +640,8 @@ async function checkAdbStatus() {
             adbInstalledArea.style.display = 'block';
             adbMissingArea.style.display = 'none';
             adbReady = true;
+            
+            lastStatusDevices = status.devices || [];
             
             // Save active element details if it's one of our port inputs to prevent focus loss during 3s refreshes
             let activeInputId = null;
@@ -642,6 +672,8 @@ async function checkAdbStatus() {
             } else {
                 activeDeviceId = null;
             }
+            updateRecordButtonLabel();
+            renderLandingDeviceList(connectedDevices);
             
             // Track rendering to avoid duplicates
             const renderedIps = new Set();
@@ -667,8 +699,13 @@ async function checkAdbStatus() {
                 name.title = d.name;
                 
                 const badge = document.createElement('span');
-                badge.className = 'device-badge connected';
-                badge.innerText = 'Connected';
+                if (d.platform === 'ios') {
+                    badge.className = 'device-badge ios-simulator';
+                    badge.innerText = 'iOS Simulator';
+                } else {
+                    badge.className = 'device-badge connected';
+                    badge.innerText = 'Connected';
+                }
                 
                 info.appendChild(dot);
                 info.appendChild(name);
@@ -678,8 +715,15 @@ async function checkAdbStatus() {
                 const actions = document.createElement('div');
                 actions.className = 'device-actions';
                 
-                // Show Disconnect button for wireless connections
-                if (d.name.includes(':') || d.name.includes('_adb-tls-connect')) {
+                // Show actions depending on platform and type
+                if (d.platform === 'ios') {
+                    const label = document.createElement('span');
+                    label.style.color = 'var(--text-muted)';
+                    label.style.fontSize = '12px';
+                    label.style.marginRight = '8px';
+                    label.innerText = 'Simulator';
+                    actions.appendChild(label);
+                } else if (d.name.includes(':') || d.name.includes('_adb-tls-connect')) {
                     const btnDisc = document.createElement('button');
                     btnDisc.className = 'btn-device-action disconnect';
                     btnDisc.innerText = 'Disconnect';
@@ -1070,4 +1114,53 @@ async function copyPath(elementId) {
     } catch (err) {
         console.error('Failed to copy text: ', err);
     }
+}
+
+function renderLandingDeviceList(connectedDevices) {
+    const container = document.getElementById('landingDeviceContainer');
+    const list = document.getElementById('landingDeviceList');
+    if (!container || !list) return;
+
+    if (connectedDevices.length === 0) {
+        container.style.display = 'none';
+        list.innerHTML = '';
+        return;
+    }
+
+    container.style.display = 'flex';
+    list.innerHTML = '';
+
+    connectedDevices.forEach(d => {
+        const item = document.createElement('div');
+        item.className = `landing-device-item ${d.name === activeDeviceId ? 'active' : ''}`;
+        item.onclick = () => {
+            activeDeviceId = d.name;
+            checkAdbStatus(); // refresh UI lists
+        };
+
+        const info = document.createElement('div');
+        info.className = 'device-info';
+
+        const dot = document.createElement('span');
+        dot.className = 'device-status-dot connected';
+
+        const name = document.createElement('span');
+        name.className = 'device-name';
+        name.innerText = d.display_name || d.name;
+
+        const badge = document.createElement('span');
+        if (d.platform === 'ios') {
+            badge.className = 'device-badge ios-simulator';
+            badge.innerText = 'iOS Simulator';
+        } else {
+            badge.className = 'device-badge connected';
+            badge.innerText = 'Connected';
+        }
+
+        info.appendChild(dot);
+        info.appendChild(name);
+        info.appendChild(badge);
+        item.appendChild(info);
+        list.appendChild(item);
+    });
 }

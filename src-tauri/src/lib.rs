@@ -9,6 +9,7 @@ use tauri::{State, AppHandle};
 struct AppState {
     recording_process: Mutex<Option<Child>>,
     video_path: Mutex<Option<String>>,
+    recording_platform: Mutex<Option<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -16,6 +17,60 @@ struct Device {
     name: String,
     state: String,
     display_name: String,
+    platform: String, // "android" | "ios"
+}
+
+#[derive(Deserialize, Debug)]
+struct SimctlDevice {
+    state: String,
+    name: String,
+    udid: String,
+    #[serde(rename = "isAvailable")]
+    is_available: Option<bool>,
+}
+
+#[derive(Deserialize, Debug)]
+struct SimctlOutput {
+    devices: std::collections::HashMap<String, Vec<SimctlDevice>>,
+}
+
+fn get_ios_simulators() -> Vec<Device> {
+    let xcrun_path = match find_in_path("xcrun") {
+        Some(path) => path,
+        None => return vec![],
+    };
+
+    let output = match Command::new(&xcrun_path)
+        .arg("simctl")
+        .arg("list")
+        .arg("devices")
+        .arg("-j")
+        .output()
+    {
+        Ok(out) => out,
+        Err(_) => return vec![],
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let sim_output: SimctlOutput = match serde_json::from_str(&stdout) {
+        Ok(parsed) => parsed,
+        Err(_) => return vec![],
+    };
+
+    let mut devices = vec![];
+    for (_runtime, sim_devices) in sim_output.devices {
+        for sim in sim_devices {
+            if sim.state == "Booted" && sim.is_available.unwrap_or(true) {
+                devices.push(Device {
+                    name: sim.udid,
+                    state: "device".to_string(),
+                    display_name: sim.name,
+                    platform: "ios".to_string(),
+                });
+            }
+        }
+    }
+    devices
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -85,37 +140,103 @@ fn find_ffmpeg() -> Option<PathBuf> {
 
 #[tauri::command]
 fn get_adb_status() -> AdbStatus {
-    let adb_path = match find_adb() {
-        Some(path) => path,
-        None => return AdbStatus { installed: false, devices: vec![] }
-    };
-
-    let output = match Command::new(&adb_path).arg("devices").arg("-l").output() {
-        Ok(out) => out,
-        Err(_) => return AdbStatus { installed: false, devices: vec![] }
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let mut devices = vec![];
-    let mut connected_names = std::collections::HashSet::new();
-    let mut connected_models = std::collections::HashSet::new();
+    let mut adb_installed = false;
 
-    // 1. First Pass: Gather model names of connected manual IP connections
-    let lines: Vec<&str> = stdout.lines().collect();
-    if lines.len() > 1 {
-        for line in &lines[1..] {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 2 {
-                let name = parts[0].trim().to_string();
-                let state = parts[1].trim().to_string();
-                
-                if !name.is_empty() && state == "device" && name.contains(':') {
-                    // Extract model value (e.g. model:Pixel_5 -> Pixel_5)
-                    for part in &parts[2..] {
-                        if part.starts_with("model:") {
-                            let model_name = part.split(':').nth(1).unwrap_or("").to_string();
-                            if !model_name.is_empty() {
-                                connected_models.insert(model_name);
+    if let Some(adb_path) = find_adb() {
+        adb_installed = true;
+        if let Ok(output) = Command::new(&adb_path).arg("devices").arg("-l").output() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut connected_names = std::collections::HashSet::new();
+            let mut connected_models = std::collections::HashSet::new();
+
+            // 1. First Pass: Gather model names of connected manual IP connections
+            let lines: Vec<&str> = stdout.lines().collect();
+            if lines.len() > 1 {
+                for line in &lines[1..] {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        let name = parts[0].trim().to_string();
+                        let state = parts[1].trim().to_string();
+                        
+                        if !name.is_empty() && state == "device" && name.contains(':') {
+                            // Extract model value (e.g. model:Pixel_5 -> Pixel_5)
+                            for part in &parts[2..] {
+                                if part.starts_with("model:") {
+                                    let model_name = part.split(':').nth(1).unwrap_or("").to_string();
+                                    if !model_name.is_empty() {
+                                        connected_models.insert(model_name);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Second Pass: Process devices and skip duplicate mDNS auto-connections
+            if lines.len() > 1 {
+                for line in &lines[1..] {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        let name = parts[0].trim().to_string();
+                        let state = parts[1].trim().to_string();
+                        if !name.is_empty() {
+                            let mut display_name = name.clone();
+                            let mut is_mdns = false;
+                            let mut model_name = String::new();
+
+                            // Parse model name for this device
+                            for part in &parts[2..] {
+                                if part.starts_with("model:") {
+                                    model_name = part.split(':').nth(1).unwrap_or("").to_string();
+                                }
+                            }
+
+                            if name.contains("_adb-tls-connect") {
+                                is_mdns = true;
+                                let base_name = name.split('.').next().unwrap_or(&name).trim();
+                                let clean_base = base_name.split_whitespace().next().unwrap_or(base_name);
+                                let without_prefix = if clean_base.starts_with("adb-") {
+                                    &clean_base[4..]
+                                } else {
+                                    clean_base
+                                };
+                                let serial = without_prefix.split('-').next().unwrap_or(without_prefix);
+                                display_name = format!("{} (Wireless)", serial);
+                            }
+
+                            // Skip duplicate mDNS connection if we already have a manual IP connection to the same device model
+                            if is_mdns && !model_name.is_empty() && connected_models.contains(&model_name) {
+                                continue;
+                            }
+
+                            if !connected_names.contains(&name) {
+                                devices.push(Device { name: name.clone(), state, display_name, platform: "android".to_string() });
+                                connected_names.insert(name);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Try to find paired but disconnected devices via mDNS
+            if let Ok(mdns_out) = Command::new(&adb_path).arg("mdns").arg("services").output() {
+                let mdns_stdout = String::from_utf8_lossy(&mdns_out.stdout);
+                for line in mdns_stdout.lines() {
+                    if line.contains("_adb-tls-connect") {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        for part in parts {
+                            if part.contains(':') && !connected_names.contains(part) {
+                                let name_str = part.to_string();
+                                devices.push(Device {
+                                    name: name_str.clone(),
+                                    state: "available (paired)".to_string(),
+                                    display_name: name_str,
+                                    platform: "android".to_string(),
+                                });
+                                connected_names.insert(part.to_string());
+                                break;
                             }
                         }
                     }
@@ -124,75 +245,14 @@ fn get_adb_status() -> AdbStatus {
         }
     }
 
-    // 2. Second Pass: Process devices and skip duplicate mDNS auto-connections
-    if lines.len() > 1 {
-        for line in &lines[1..] {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 2 {
-                let name = parts[0].trim().to_string();
-                let state = parts[1].trim().to_string();
-                if !name.is_empty() {
-                    let mut display_name = name.clone();
-                    let mut is_mdns = false;
-                    let mut model_name = String::new();
+    // Append iOS simulators
+    let mut ios_sims = get_ios_simulators();
+    devices.append(&mut ios_sims);
 
-                    // Parse model name for this device
-                    for part in &parts[2..] {
-                        if part.starts_with("model:") {
-                            model_name = part.split(':').nth(1).unwrap_or("").to_string();
-                        }
-                    }
+    let has_simctl = cfg!(target_os = "macos") && find_in_path("xcrun").is_some();
+    let installed = adb_installed || has_simctl;
 
-                    if name.contains("_adb-tls-connect") {
-                        is_mdns = true;
-                        let base_name = name.split('.').next().unwrap_or(&name).trim();
-                        let clean_base = base_name.split_whitespace().next().unwrap_or(base_name);
-                        let without_prefix = if clean_base.starts_with("adb-") {
-                            &clean_base[4..]
-                        } else {
-                            clean_base
-                        };
-                        let serial = without_prefix.split('-').next().unwrap_or(without_prefix);
-                        display_name = format!("{} (Wireless)", serial);
-                    }
-
-                    // Skip duplicate mDNS connection if we already have a manual IP connection to the same device model
-                    if is_mdns && !model_name.is_empty() && connected_models.contains(&model_name) {
-                        continue;
-                    }
-
-                    if !connected_names.contains(&name) {
-                        devices.push(Device { name: name.clone(), state, display_name });
-                        connected_names.insert(name);
-                    }
-                }
-            }
-        }
-    }
-
-    // Try to find paired but disconnected devices via mDNS
-    if let Ok(mdns_out) = Command::new(&adb_path).arg("mdns").arg("services").output() {
-        let mdns_stdout = String::from_utf8_lossy(&mdns_out.stdout);
-        for line in mdns_stdout.lines() {
-            if line.contains("_adb-tls-connect") {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                for part in parts {
-                    if part.contains(':') && !connected_names.contains(part) {
-                        let name_str = part.to_string();
-                        devices.push(Device {
-                            name: name_str.clone(),
-                            state: "available (paired)".to_string(),
-                            display_name: name_str,
-                        });
-                        connected_names.insert(part.to_string());
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    AdbStatus { installed: true, devices }
+    AdbStatus { installed, devices }
 }
 
 #[tauri::command]
@@ -335,96 +395,166 @@ fn load_video(path: String, state: State<'_, AppState>) -> ApiResponse<String> {
 
 #[tauri::command]
 fn start_recording(device_id: Option<String>, state: State<'_, AppState>) -> ApiResponse<String> {
-    let adb_path = match find_adb() {
-        Some(path) => path,
-        None => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("ADB not installed".to_string()), needs_manual_connect: None }
+    // Check if device_id is an iOS simulator
+    let is_ios = if let Some(ref id) = device_id {
+        get_ios_simulators().iter().any(|d| &d.name == id)
+    } else {
+        false
     };
 
-    let mut proc_lock = state.recording_process.lock().unwrap();
-    if let Some(ref mut child) = *proc_lock {
-        if child.try_wait().map(|s| s.is_none()).unwrap_or(false) {
-            return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("Already recording".to_string()), needs_manual_connect: None };
-        } else {
-            *proc_lock = None;
+    if is_ios {
+        let xcrun_path = match find_in_path("xcrun") {
+            Some(path) => path,
+            None => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("xcrun not found".to_string()), needs_manual_connect: None }
+        };
+
+        let mut proc_lock = state.recording_process.lock().unwrap();
+        if let Some(ref mut child) = *proc_lock {
+            if child.try_wait().map(|s| s.is_none()).unwrap_or(false) {
+                return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("Already recording".to_string()), needs_manual_connect: None };
+            } else {
+                *proc_lock = None;
+            }
         }
-    }
 
-    let dev_id_ref = device_id.as_deref();
-    if let Some(id) = dev_id_ref {
-        if id.contains(':') {
-            // Auto connect before recording if Wi-Fi
-            let _ = Command::new(&adb_path).arg("connect").arg(id).output();
+        let output_dir = PathBuf::from("/Users/bassem/Documents/projects/video-clipper/recordings");
+        let _ = std::fs::create_dir_all(&output_dir);
+        let local_path = output_dir.join("ios_record.mp4");
+        
+        if local_path.exists() {
+            let _ = std::fs::remove_file(&local_path);
         }
-    }
 
-    // Verify a device is indeed connected
-    let mut check_cmd = Command::new(&adb_path);
-    if let Some(id) = dev_id_ref {
-        check_cmd.arg("-s").arg(id);
-    }
-    check_cmd.arg("shell").arg("getprop").arg("sys.boot_completed");
-    
-    match check_cmd.output() {
-        Ok(out) if out.status.success() => {},
-        _ => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("Selected ADB device is not connected or not responding.".to_string()), needs_manual_connect: None }
-    }
+        let mut rec_cmd = Command::new(&xcrun_path);
+        rec_cmd.arg("simctl")
+               .arg("io")
+               .arg(device_id.as_ref().unwrap())
+               .arg("recordVideo")
+               .arg("--force")
+               .arg(&local_path);
 
-    // Wake up the device if screen is off
-    let mut wake_cmd = Command::new(&adb_path);
-    if let Some(id) = dev_id_ref {
-        wake_cmd.arg("-s").arg(id);
-    }
-    let _ = wake_cmd.arg("shell").arg("input").arg("keyevent").arg("224").output(); // KEYCODE_WAKE
+        rec_cmd.stderr(Stdio::piped());
 
-    let mut rec_cmd = Command::new(&adb_path);
-    if let Some(id) = dev_id_ref {
-        rec_cmd.arg("-s").arg(id);
-    }
-    rec_cmd.arg("shell").arg("screenrecord").arg("/sdcard/clip_record.mp4");
-    rec_cmd.stderr(Stdio::piped());
+        match rec_cmd.spawn() {
+            Ok(child) => {
+                *proc_lock = Some(child);
+                let mut plat_lock = state.recording_platform.lock().unwrap();
+                *plat_lock = Some("ios".to_string());
 
-    match rec_cmd.spawn() {
-        Ok(mut child) => {
-            // Wait 400ms to see if screenrecord fails instantly (e.g. locked display state)
-            std::thread::sleep(Duration::from_millis(400));
-            if let Ok(Some(_status)) = child.try_wait() {
-                let mut err_msg = "screenrecord exited prematurely. Please make sure your phone's screen is ON and UNLOCKED.".to_string();
-                if let Some(mut stderr) = child.stderr.take() {
-                    use std::io::Read;
-                    let mut buf = String::new();
-                    if stderr.read_to_string(&mut buf).is_ok() && !buf.trim().is_empty() {
-                        if buf.contains("INVALID_LAYER_STACK") {
-                            err_msg = "Device screen is locked or turned off. Please unlock the screen and try again.".to_string();
-                        } else {
-                            err_msg = format!("screenrecord error: {}", buf.trim());
-                        }
-                    }
+                ApiResponse {
+                    success: true,
+                    message: "iOS Simulator recording started".to_string(),
+                    data: Some("recording".to_string()),
+                    error: None,
+                    needs_manual_connect: None,
                 }
-                return ApiResponse {
+            }
+            Err(e) => {
+                ApiResponse {
                     success: false,
                     message: "".to_string(),
                     data: None,
-                    error: Some(err_msg),
+                    error: Some(format!("Failed to start simctl recordVideo: {}", e)),
                     needs_manual_connect: None,
-                };
+                }
             }
+        }
+    } else {
+        // Android recording workflow
+        let adb_path = match find_adb() {
+            Some(path) => path,
+            None => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("ADB not installed".to_string()), needs_manual_connect: None }
+        };
 
-            *proc_lock = Some(child);
-            ApiResponse {
-                success: true,
-                message: "Recording started".to_string(),
-                data: Some("recording".to_string()),
-                error: None,
-                needs_manual_connect: None,
+        let mut proc_lock = state.recording_process.lock().unwrap();
+        if let Some(ref mut child) = *proc_lock {
+            if child.try_wait().map(|s| s.is_none()).unwrap_or(false) {
+                return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("Already recording".to_string()), needs_manual_connect: None };
+            } else {
+                *proc_lock = None;
             }
-        },
-        Err(e) => {
-            ApiResponse {
-                success: false,
-                message: "".to_string(),
-                data: None,
-                error: Some(format!("Failed to start screenrecord: {}", e)),
-                needs_manual_connect: None,
+        }
+
+        let dev_id_ref = device_id.as_deref();
+        if let Some(id) = dev_id_ref {
+            if id.contains(':') {
+                // Auto connect before recording if Wi-Fi
+                let _ = Command::new(&adb_path).arg("connect").arg(id).output();
+            }
+        }
+
+        // Verify a device is indeed connected
+        let mut check_cmd = Command::new(&adb_path);
+        if let Some(id) = dev_id_ref {
+            check_cmd.arg("-s").arg(id);
+        }
+        check_cmd.arg("shell").arg("getprop").arg("sys.boot_completed");
+        
+        match check_cmd.output() {
+            Ok(out) if out.status.success() => {},
+            _ => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("Selected ADB device is not connected or not responding.".to_string()), needs_manual_connect: None }
+        }
+
+        // Wake up the device if screen is off
+        let mut wake_cmd = Command::new(&adb_path);
+        if let Some(id) = dev_id_ref {
+            wake_cmd.arg("-s").arg(id);
+        }
+        let _ = wake_cmd.arg("shell").arg("input").arg("keyevent").arg("224").output(); // KEYCODE_WAKE
+
+        let mut rec_cmd = Command::new(&adb_path);
+        if let Some(id) = dev_id_ref {
+            rec_cmd.arg("-s").arg(id);
+        }
+        rec_cmd.arg("shell").arg("screenrecord").arg("/sdcard/clip_record.mp4");
+        rec_cmd.stderr(Stdio::piped());
+
+        match rec_cmd.spawn() {
+            Ok(mut child) => {
+                // Wait 400ms to see if screenrecord fails instantly (e.g. locked display state)
+                std::thread::sleep(Duration::from_millis(400));
+                if let Ok(Some(_status)) = child.try_wait() {
+                    let mut err_msg = "screenrecord exited prematurely. Please make sure your phone's screen is ON and UNLOCKED.".to_string();
+                    if let Some(mut stderr) = child.stderr.take() {
+                        use std::io::Read;
+                        let mut buf = String::new();
+                        if stderr.read_to_string(&mut buf).is_ok() && !buf.trim().is_empty() {
+                            if buf.contains("INVALID_LAYER_STACK") {
+                                err_msg = "Device screen is locked or turned off. Please unlock the screen and try again.".to_string();
+                            } else {
+                                err_msg = format!("screenrecord error: {}", buf.trim());
+                            }
+                        }
+                    }
+                    return ApiResponse {
+                        success: false,
+                        message: "".to_string(),
+                        data: None,
+                        error: Some(err_msg),
+                        needs_manual_connect: None,
+                    };
+                }
+
+                *proc_lock = Some(child);
+                let mut plat_lock = state.recording_platform.lock().unwrap();
+                *plat_lock = Some("android".to_string());
+
+                ApiResponse {
+                    success: true,
+                    message: "Recording started".to_string(),
+                    data: Some("recording".to_string()),
+                    error: None,
+                    needs_manual_connect: None,
+                }
+            },
+            Err(e) => {
+                ApiResponse {
+                    success: false,
+                    message: "".to_string(),
+                    data: None,
+                    error: Some(format!("Failed to start screenrecord: {}", e)),
+                    needs_manual_connect: None,
+                }
             }
         }
     }
@@ -432,9 +562,9 @@ fn start_recording(device_id: Option<String>, state: State<'_, AppState>) -> Api
 
 #[tauri::command]
 fn stop_recording(device_id: Option<String>, state: State<'_, AppState>, _app: AppHandle) -> ApiResponse<String> {
-    let adb_path = match find_adb() {
-        Some(path) => path,
-        None => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("ADB not installed".to_string()), needs_manual_connect: None }
+    let platform = {
+        let plat_lock = state.recording_platform.lock().unwrap();
+        plat_lock.clone().unwrap_or_else(|| "android".to_string())
     };
 
     let mut proc_lock = state.recording_process.lock().unwrap();
@@ -443,55 +573,101 @@ fn stop_recording(device_id: Option<String>, state: State<'_, AppState>, _app: A
         None => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("Not recording".to_string()), needs_manual_connect: None }
     };
 
-    let _ = child.kill();
-    let _ = child.wait();
+    if platform == "ios" {
+        // Send SIGINT (2) on macOS to let simctl stop and finalize the video correctly
+        #[cfg(target_os = "macos")]
+        {
+            let pid = child.id();
+            let _ = Command::new("kill").arg("-2").arg(pid.to_string()).output();
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = child.kill();
+        }
 
-    std::thread::sleep(Duration::from_secs(1));
+        let _ = child.wait();
+        std::thread::sleep(Duration::from_secs(1));
 
-    // Resolve local path to pull the video
-    // Save to target directory
-    let output_dir = PathBuf::from("/Users/bassem/Documents/projects/video-clipper/recordings");
-    let _ = std::fs::create_dir_all(&output_dir);
-    let local_path = output_dir.join("android_record.mp4");
-    let local_path_str = local_path.to_string_lossy().to_string();
+        let output_dir = PathBuf::from("/Users/bassem/Documents/projects/video-clipper/recordings");
+        let local_path = output_dir.join("ios_record.mp4");
+        let local_path_str = local_path.to_string_lossy().to_string();
 
-    let dev_id_ref = device_id.as_deref();
-
-    // Pull video
-    let mut pull_cmd = Command::new(&adb_path);
-    if let Some(id) = dev_id_ref {
-        pull_cmd.arg("-s").arg(id);
-    }
-    pull_cmd.arg("pull").arg("/sdcard/clip_record.mp4").arg(&local_path);
-
-    if let Ok(out) = pull_cmd.output() {
-        if out.status.success() {
-            // Delete remote video
-            let mut rm_cmd = Command::new(&adb_path);
-            if let Some(id) = dev_id_ref {
-                rm_cmd.arg("-s").arg(id);
-            }
-            let _ = rm_cmd.arg("shell").arg("rm").arg("/sdcard/clip_record.mp4").output();
-
+        if local_path.exists() {
             let mut vpath_lock = state.video_path.lock().unwrap();
             *vpath_lock = Some(local_path_str.clone());
 
-            return ApiResponse {
+            ApiResponse {
                 success: true,
-                message: "Recording saved".to_string(),
+                message: "iOS recording saved".to_string(),
                 data: Some(local_path_str),
                 error: None,
                 needs_manual_connect: None,
-            };
+            }
+        } else {
+            ApiResponse {
+                success: false,
+                message: "".to_string(),
+                data: None,
+                error: Some("iOS recording file not found after stopping".to_string()),
+                needs_manual_connect: None,
+            }
         }
-    }
+    } else {
+        // Android workflow
+        let adb_path = match find_adb() {
+            Some(path) => path,
+            None => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("ADB not installed".to_string()), needs_manual_connect: None }
+        };
 
-    ApiResponse {
-        success: false,
-        message: "".to_string(),
-        data: None,
-        error: Some("Failed to pull recording from Android".to_string()),
-        needs_manual_connect: None,
+        let _ = child.kill();
+        let _ = child.wait();
+
+        std::thread::sleep(Duration::from_secs(1));
+
+        // Resolve local path to pull the video
+        let output_dir = PathBuf::from("/Users/bassem/Documents/projects/video-clipper/recordings");
+        let _ = std::fs::create_dir_all(&output_dir);
+        let local_path = output_dir.join("android_record.mp4");
+        let local_path_str = local_path.to_string_lossy().to_string();
+
+        let dev_id_ref = device_id.as_deref();
+
+        // Pull video
+        let mut pull_cmd = Command::new(&adb_path);
+        if let Some(id) = dev_id_ref {
+            pull_cmd.arg("-s").arg(id);
+        }
+        pull_cmd.arg("pull").arg("/sdcard/clip_record.mp4").arg(&local_path);
+
+        if let Ok(out) = pull_cmd.output() {
+            if out.status.success() {
+                // Delete remote video
+                let mut rm_cmd = Command::new(&adb_path);
+                if let Some(id) = dev_id_ref {
+                    rm_cmd.arg("-s").arg(id);
+                }
+                let _ = rm_cmd.arg("shell").arg("rm").arg("/sdcard/clip_record.mp4").output();
+
+                let mut vpath_lock = state.video_path.lock().unwrap();
+                *vpath_lock = Some(local_path_str.clone());
+
+                return ApiResponse {
+                    success: true,
+                    message: "Android recording saved".to_string(),
+                    data: Some(local_path_str),
+                    error: None,
+                    needs_manual_connect: None,
+                };
+            }
+        }
+
+        ApiResponse {
+            success: false,
+            message: "".to_string(),
+            data: None,
+            error: Some("Failed to pull recording from Android".to_string()),
+            needs_manual_connect: None,
+        }
     }
 }
 
@@ -747,4 +923,15 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_list_simulators() {
+        let sims = get_ios_simulators();
+        println!("TEST_SIMS: {:?}", sims);
+    }
 }

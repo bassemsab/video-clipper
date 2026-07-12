@@ -28,7 +28,9 @@ Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManage
 
 ## 🚀 Key Features
 
+* **iOS Simulator Screen Recording**: Auto-detects booted iOS Simulators on macOS and screen-records them natively using `xcrun simctl`, writing files directly to the host filesystem.
 * **Wireless ADB Screen Recording**: Toggle developer options on your Android phone, pair once, and connect wirelessly. The app remembers paired device IPs and supports instant port adjustments.
+* **Landing Page Device Selector**: View all ready connected devices (Android & iOS simulators) directly on the landing screen to instantly select your recording source.
 * **Persistent Pairing History**: Your paired devices list is stored in a clean local database. One-click reconnect keeps you in flow.
 * **Custom FPS Frame Extraction**: Key in any frame rate from **`1` to `320` FPS** using a custom numeric input. The target paths are updated dynamically.
 * **Save to Disk**: Save your clipped segment frame-by-frame as raw PNG images inside organized folders.
@@ -48,10 +50,13 @@ To run or build the application, ensure the following binary packages are instal
 * **Windows**: `choco install ffmpeg` or download from official sources and add to environment path.
 * **Linux**: `sudo apt update && sudo apt install ffmpeg`
 
-### 2. ADB (Android Debug Bridge, required for screen recording)
+### 2. ADB (Android Debug Bridge, required for Android recording)
 * **macOS**: `brew install android-platform-tools`
 * **Windows**: `choco install adb`
 * **Linux**: `sudo apt update && sudo apt install android-tools-adb`
+
+### 3. Xcode Command Line Tools (Required for iOS Simulator recording)
+* **macOS**: Installed automatically with Xcode or run `xcode-select --install`. Requires `xcrun` and `simctl` in system path.
 
 ---
 

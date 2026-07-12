@@ -992,6 +992,11 @@ body {
     color: var(--text-muted);
 }
 
+.device-badge.ios-simulator {
+    background: rgba(168, 85, 247, 0.15);
+    color: #c084fc;
+}
+
 /* UTILS & ALERTS */
 .error-msg {
     color: var(--danger-color);
@@ -1099,3 +1104,63 @@ video::-webkit-media-controls-fullscreen-button {
 .toast-info {
     border-left: 4px solid #3b82f6; /* accent-color */
 }
+
+/* Landing Page Device Selection Styles */
+.landing-device-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    width: 100%;
+    max-width: 440px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px dashed rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+.landing-device-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    align-self: flex-start;
+    margin-left: 4px;
+}
+
+.landing-device-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.landing-device-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-sizing: border-box;
+}
+
+.landing-device-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-1px);
+}
+
+.landing-device-item.active {
+    border-color: var(--primary-color);
+    background: rgba(59, 130, 246, 0.08);
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.15);
+}
+
