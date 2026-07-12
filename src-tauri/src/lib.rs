@@ -78,8 +78,41 @@ fn get_adb_status() -> AdbStatus {
     let mut devices = vec![];
     let mut connected_names = std::collections::HashSet::new();
 
-    // Parse connected devices
+    // 1. Gather all connected manual IP addresses to deduplicate mDNS auto-connections
+    let mut connected_ips = std::collections::HashSet::new();
     let lines: Vec<&str> = stdout.lines().collect();
+    if lines.len() > 1 {
+        for line in &lines[1..] {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 2 {
+                let name = parts[0].trim().to_string();
+                if !name.is_empty() && name.contains(':') {
+                    let ip = name.split(':').next().unwrap_or(&name).to_string();
+                    connected_ips.insert(ip);
+                }
+            }
+        }
+    }
+
+    // 2. Parse the mDNS service instances to map mDNS device name -> IP:Port
+    let mut mdns_map = std::collections::HashMap::new();
+    if let Ok(mdns_out) = Command::new(&adb_path).arg("mdns").arg("services").output() {
+        let mdns_stdout = String::from_utf8_lossy(&mdns_out.stdout);
+        for line in mdns_stdout.lines() {
+            if line.contains("_adb-tls-connect") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    let mdns_name = parts[0].split('.').next().unwrap_or(parts[0]).trim().to_string();
+                    let ip_port = parts[2].trim().to_string();
+                    if !mdns_name.is_empty() && ip_port.contains(':') {
+                        mdns_map.insert(mdns_name, ip_port);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Process and filter connected devices
     if lines.len() > 1 {
         for line in &lines[1..] {
             let parts: Vec<&str> = line.split('\t').collect();
@@ -87,9 +120,12 @@ fn get_adb_status() -> AdbStatus {
                 let name = parts[0].trim().to_string();
                 let state = parts[1].trim().to_string();
                 if !name.is_empty() {
-                    // Extract friendly display name for mDNS connections
                     let mut display_name = name.clone();
+                    let mut is_mdns = false;
+                    let mut mdns_ip = String::new();
+
                     if name.contains("_adb-tls-connect") {
+                        is_mdns = true;
                         let base_name = name.split('.').next().unwrap_or(&name).trim();
                         let clean_base = base_name.split_whitespace().next().unwrap_or(base_name);
                         let without_prefix = if clean_base.starts_with("adb-") {
@@ -99,9 +135,21 @@ fn get_adb_status() -> AdbStatus {
                         };
                         let serial = without_prefix.split('-').next().unwrap_or(without_prefix);
                         display_name = format!("{} (Wireless)", serial);
+
+                        if let Some(ip_port) = mdns_map.get(clean_base) {
+                            mdns_ip = ip_port.split(':').next().unwrap_or(ip_port).to_string();
+                        }
                     }
-                    devices.push(Device { name: name.clone(), state, display_name });
-                    connected_names.insert(name);
+
+                    // Skip duplicate mDNS connection if we already have a manual IP connection to the same phone
+                    if is_mdns && !mdns_ip.is_empty() && connected_ips.contains(&mdns_ip) {
+                        continue;
+                    }
+
+                    if !connected_names.contains(&name) {
+                        devices.push(Device { name: name.clone(), state, display_name });
+                        connected_names.insert(name);
+                    }
                 }
             }
         }
