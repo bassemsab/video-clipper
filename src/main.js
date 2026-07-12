@@ -25,8 +25,33 @@ const timelineSelected = document.getElementById('timelineSelected');
 const videoNameDisplay = document.getElementById('videoNameDisplay');
 const seekSlider = document.getElementById('seekSlider');
 const btnPlayToggle = document.getElementById('btnPlayToggle');
-const editorStatus = document.getElementById('editorStatus');
-const editorError = document.getElementById('editorError');
+// Floating Toast Notification system
+function showToast(message, type = 'info') {
+    let toast = document.getElementById('toastNotification');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toastNotification';
+        toast.className = 'toast-container';
+        document.body.appendChild(toast);
+    }
+    
+    // Clear and set class list
+    toast.className = 'toast-container show';
+    toast.classList.add(`toast-${type}`);
+    
+    let icon = 'ℹ️';
+    if (type === 'success') icon = '✅';
+    if (type === 'error') icon = '❌';
+    
+    toast.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-message">${message}</span>`;
+    
+    if (window.toastTimeout) {
+        clearTimeout(window.toastTimeout);
+    }
+    window.toastTimeout = setTimeout(() => {
+        toast.classList.remove('show');
+    }, 5000); // 5 seconds display
+}
 
 // Add play/pause click handler on the video element itself
 if (videoPlayer) {
@@ -299,47 +324,47 @@ async function extractAllFrames() {
     const start = startTime;
     const end = endTime;
     const fps = getFPS().toString();
+    const btn = document.getElementById('btnSave');
+    const oldText = btn.innerText;
     
-    editorStatus.style.display = 'block';
-    editorStatus.innerText = 'Extracting frames...';
-    editorError.style.display = 'none';
+    btn.innerHTML = '<span class="loader" style="width:10px; height:10px; border-width:1px; margin-right:4px;"></span>Saving...';
+    btn.disabled = true;
     
     try {
         const res = await invoke('extract_frames', { start, end, fps });
         if (res.success) {
-            editorStatus.innerText = res.message;
+            showToast(res.message, 'success');
         } else {
-            editorStatus.style.display = 'none';
-            editorError.style.display = 'block';
-            editorError.innerText = res.error;
+            showToast(res.error, 'error');
         }
     } catch (e) {
-        editorStatus.style.display = 'none';
-        editorError.style.display = 'block';
-        editorError.innerText = e;
+        showToast(e.message || e, 'error');
+    } finally {
+        btn.innerText = oldText;
+        btn.disabled = false;
     }
 }
 
 async function extractSingleFrame() {
     const time = videoPlayer.currentTime;
+    const btn = document.getElementById('btnSave');
+    const oldText = btn.innerText;
     
-    editorStatus.style.display = 'block';
-    editorStatus.innerText = 'Extracting frame...';
-    editorError.style.display = 'none';
+    btn.innerHTML = '<span class="loader" style="width:10px; height:10px; border-width:1px; margin-right:4px;"></span>Saving...';
+    btn.disabled = true;
     
     try {
         const res = await invoke('extract_frame', { time });
         if (res.success) {
-            editorStatus.innerText = res.message;
+            showToast(res.message, 'success');
         } else {
-            editorStatus.style.display = 'none';
-            editorError.style.display = 'block';
-            editorError.innerText = res.error;
+            showToast(res.error, 'error');
         }
     } catch (e) {
-        editorStatus.style.display = 'none';
-        editorError.style.display = 'block';
-        editorError.innerText = e;
+        showToast(e.message || e, 'error');
+    } finally {
+        btn.innerText = oldText;
+        btn.disabled = false;
     }
 }
 
@@ -348,10 +373,6 @@ async function copyCurrentFrameToClipboard() {
     const oldText = btn.innerText;
     btn.innerHTML = '<span class="loader" style="width:10px; height:10px; border-width:1px; margin-right:4px;"></span>Copying...';
     btn.disabled = true;
-    
-    editorStatus.style.display = 'block';
-    editorStatus.innerText = 'Copying current frame...';
-    editorError.style.display = 'none';
     
     try {
         const canvas = document.createElement('canvas');
@@ -364,23 +385,19 @@ async function copyCurrentFrameToClipboard() {
             const base64Data = canvas.toDataURL('image/png');
             const res = await invoke('write_image_to_clipboard', { base64Data });
             if (res.success) {
-                editorStatus.innerText = 'Current frame copied to clipboard!';
+                showToast('Current frame copied to clipboard!', 'success');
             } else {
                 throw new Error(res.error || res.message);
             }
         } catch (err) {
             console.error("Clipboard API failed:", err);
-            editorStatus.style.display = 'none';
-            editorError.style.display = 'block';
-            editorError.innerText = 'Clipboard error: ' + err;
+            showToast('Clipboard error: ' + err, 'error');
         } finally {
             btn.innerText = oldText;
             btn.disabled = false;
         }
     } catch (e) {
-        editorStatus.style.display = 'none';
-        editorError.style.display = 'block';
-        editorError.innerText = e.message || e;
+        showToast(e.message || e, 'error');
         btn.innerText = oldText;
         btn.disabled = false;
     }
@@ -394,8 +411,7 @@ async function copyFramesGridToClipboard() {
     
     const duration = end - start;
     if (duration <= 0) {
-        editorError.style.display = 'block';
-        editorError.innerText = 'Invalid start/end points. Duration must be positive.';
+        showToast('Invalid start/end points. Duration must be positive.', 'error');
         return;
     }
     
@@ -409,10 +425,6 @@ async function copyFramesGridToClipboard() {
     const oldText = btn.innerText;
     btn.innerHTML = '<span class="loader" style="width:10px; height:10px; border-width:1px; margin-right:4px;"></span>Generating Grid...';
     btn.disabled = true;
-    
-    editorStatus.style.display = 'block';
-    editorStatus.innerText = `Generating grid of ${frameCount} frames (${fps} fps)...`;
-    editorError.style.display = 'none';
     
     try {
         const wasPlaying = !videoPlayer.paused;
@@ -475,15 +487,13 @@ async function copyFramesGridToClipboard() {
             const base64Data = gridCanvas.toDataURL('image/png');
             const res = await invoke('write_image_to_clipboard', { base64Data });
             if (res.success) {
-                editorStatus.innerText = `Grid of ${frameCount} frames copied to clipboard!`;
+                showToast(`Grid of ${frameCount} frames copied to clipboard!`, 'success');
             } else {
                 throw new Error(res.error || res.message);
             }
         } catch (err) {
             console.error("Clipboard API failed:", err);
-            editorStatus.style.display = 'none';
-            editorError.style.display = 'block';
-            editorError.innerText = 'Clipboard error: ' + err;
+            showToast('Clipboard error: ' + err, 'error');
         } finally {
             // Restore state
             videoPlayer.currentTime = originalTime;
@@ -494,9 +504,7 @@ async function copyFramesGridToClipboard() {
         }
         
     } catch (e) {
-        editorStatus.style.display = 'none';
-        editorError.style.display = 'block';
-        editorError.innerText = e.message || e;
+        showToast(e.message || e, 'error');
         btn.innerText = oldText;
         btn.disabled = false;
     }
