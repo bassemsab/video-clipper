@@ -1037,6 +1037,11 @@ fn write_image_to_clipboard(base64_data: String) -> ApiResponse<String> {
     }
 }
 
+#[tauri::command]
+fn is_dev() -> bool {
+    cfg!(debug_assertions)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1057,7 +1062,8 @@ pub fn run() {
             extract_frame,
             write_image_to_clipboard,
             save_image_to_disk,
-            show_in_finder
+            show_in_finder,
+            is_dev
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

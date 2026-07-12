@@ -110,18 +110,31 @@ try {
     console.error("Failed to setup native drag-drop:", e);
 }
 
-// Restore saved video path on reload/HMR
-document.addEventListener('DOMContentLoaded', () => {
-    const savedPath = localStorage.getItem('currentVideoPath');
-    if (savedPath) {
-        loadVideoPath(savedPath);
+// Restore saved video path on reload/HMR (dev only)
+document.addEventListener('DOMContentLoaded', async () => {
+    let isDev = false;
+    try {
+        isDev = await invoke('is_dev');
+    } catch (e) {
+        console.error("Failed to check dev mode:", e);
+    }
+
+    if (isDev) {
+        const savedPath = localStorage.getItem('currentVideoPath');
+        if (savedPath) {
+            loadVideoPath(savedPath);
+            const settingsOpen = localStorage.getItem('settingsOpen');
+            if (settingsOpen === 'true') {
+                openSettings();
+            }
+            return;
+        }
     } else {
-        startDevicePolling();
+        // Clear saved paths in production to prevent auto-loading old states
+        localStorage.removeItem('currentVideoPath');
+        localStorage.removeItem('settingsOpen');
     }
-    const settingsOpen = localStorage.getItem('settingsOpen');
-    if (settingsOpen === 'true') {
-        openSettings();
-    }
+    startDevicePolling();
 });
 
 let devicePollingInterval = null;
