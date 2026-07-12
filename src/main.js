@@ -4,6 +4,7 @@ const { getCurrentWindow } = window.__TAURI__.window;
 // State variables
 let activeDeviceId = null;
 let isRecording = false;
+let isPreparingRecording = false;
 let adbReady = false;
 let checkAdbInterval = null;
 let lastStatusDevices = [];
@@ -607,7 +608,7 @@ function handleSaveGridAction() {
 
 // ADB / Recording Controls
 function updateRecordButtonLabel() {
-    if (isRecording) return;
+    if (isRecording || isPreparingRecording) return;
     const activeDevice = lastStatusDevices.find(d => d.name === activeDeviceId);
     if (activeDevice && activeDevice.platform === 'ios') {
         btnRecord.innerHTML = '📱 Record iOS Simulator';
@@ -659,6 +660,7 @@ async function toggleRecording() {
                 activeDeviceId = status.devices[0].name;
             }
             
+            isPreparingRecording = true;
             btnRecord.innerHTML = '<span class="loader"></span> Starting record...';
             btnRecord.classList.remove('recording-active');
             btnRecord.disabled = true;
@@ -671,12 +673,14 @@ async function toggleRecording() {
                 throw new Error(res.error);
             }
             
+            isPreparingRecording = false;
             isRecording = true;
             btnRecord.innerHTML = '⏹ Stop & Load Video';
             btnRecord.classList.add('recording-active');
             btnRecord.disabled = false;
-            recordingStatus.innerHTML = '🔴 Recording in progress... Click above to stop';
+            recordingStatus.innerHTML = 'Recording in progress... Click above to stop';
         } catch (e) {
+            isPreparingRecording = false;
             landingError.style.display = 'block';
             landingError.innerText = e.message || e;
             resetRecordButton();
@@ -686,6 +690,7 @@ async function toggleRecording() {
 
 function resetRecordButton() {
     isRecording = false;
+    isPreparingRecording = false;
     updateRecordButtonLabel();
     btnRecord.classList.remove('recording-active');
     btnRecord.disabled = false;
