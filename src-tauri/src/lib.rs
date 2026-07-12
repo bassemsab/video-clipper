@@ -34,6 +34,7 @@ struct ApiResponse<T> {
 }
 
 fn find_in_path(cmd: &str) -> Option<PathBuf> {
+    // 1. Try environment PATH
     if let Ok(path_var) = std::env::var("PATH") {
         for path in std::env::split_paths(&path_var) {
             let exe_path = path.join(cmd);
@@ -42,11 +43,27 @@ fn find_in_path(cmd: &str) -> Option<PathBuf> {
             }
         }
     }
+    // 2. Try common system folders (e.g. on macOS GUI app where PATH is limited)
+    let fallbacks = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ];
+    for path in &fallbacks {
+        let exe_path = Path::new(path).join(cmd);
+        #[cfg(target_os = "windows")]
+        let exe_path = Path::new(path).join(format!("{}.exe", cmd));
+        
+        if exe_path.is_file() {
+            return Some(exe_path);
+        }
+    }
     None
 }
 
 fn find_adb() -> Option<PathBuf> {
-    // 1. Try PATH
+    // 1. Try PATH and fallback system folders
     if let Some(path) = find_in_path("adb") {
         return Some(path);
     }
@@ -58,6 +75,10 @@ fn find_adb() -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn find_ffmpeg() -> Option<PathBuf> {
+    find_in_path("ffmpeg")
 }
 
 
@@ -494,7 +515,18 @@ fn extract_frames(start: f64, end: f64, fps: String, state: State<'_, AppState>)
     let output_pattern = output_dir.join("%04d.png");
     let duration = end - start;
 
-    let output = Command::new("ffmpeg")
+    let ffmpeg_path = match find_ffmpeg() {
+        Some(path) => path,
+        None => return ApiResponse {
+            success: false,
+            message: "".to_string(),
+            data: None,
+            error: Some("ffmpeg binary not found. Please install ffmpeg and make sure it is in your system path.".to_string()),
+            needs_manual_connect: None,
+        }
+    };
+
+    let output = Command::new(&ffmpeg_path)
         .arg("-y")
         .arg("-ss").arg(start.to_string())
         .arg("-i").arg(&video_path)
@@ -555,7 +587,18 @@ fn extract_frame(time: f64, state: State<'_, AppState>) -> ApiResponse<String> {
     let filename = format!("frame_{:.3}.png", time).replace('.', "_");
     let output_path = output_dir.join(filename);
 
-    let output = Command::new("ffmpeg")
+    let ffmpeg_path = match find_ffmpeg() {
+        Some(path) => path,
+        None => return ApiResponse {
+            success: false,
+            message: "".to_string(),
+            data: None,
+            error: Some("ffmpeg binary not found. Please install ffmpeg and make sure it is in your system path.".to_string()),
+            needs_manual_connect: None,
+        }
+    };
+
+    let output = Command::new(&ffmpeg_path)
         .arg("-y")
         .arg("-ss").arg(time.to_string())
         .arg("-i").arg(&video_path)
@@ -595,6 +638,96 @@ fn extract_frame(time: f64, state: State<'_, AppState>) -> ApiResponse<String> {
     }
 }
 
+#[tauri::command]
+fn write_image_to_clipboard(base64_data: String) -> ApiResponse<String> {
+    // 1. Decode base64 image data to bytes
+    let clean_base64 = base64_data
+        .replace("data:image/png;base64,", "")
+        .replace("data:image/jpeg;base64,", "")
+        .trim()
+        .to_string();
+
+    let bytes = match base64::Engine::decode(&base64::prelude::BASE64_STANDARD, &clean_base64) {
+        Ok(b) => b,
+        Err(e) => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some(e.to_string()), needs_manual_connect: None }
+    };
+
+    // 2. Write to a temporary file
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join("video_clipper_clip.png");
+    if let Err(e) = std::fs::write(&temp_path, bytes) {
+        return ApiResponse { success: false, message: "".to_string(), data: None, error: Some(e.to_string()), needs_manual_connect: None };
+    }
+
+    let path_str = temp_path.to_string_lossy().to_string();
+
+    // 3. Execute platform-specific clipboard command
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!("set the clipboard to (read (POSIX file \"{}\") as {{«class PNGf»}})", path_str);
+        match Command::new("osascript").arg("-e").arg(&script).output() {
+            Ok(out) => {
+                if !out.status.success() {
+                    let err = String::from_utf8_lossy(&out.stderr).to_string();
+                    let _ = std::fs::remove_file(&temp_path);
+                    return ApiResponse { success: false, message: "".to_string(), data: None, error: Some(err), needs_manual_connect: None };
+                }
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&temp_path);
+                return ApiResponse { success: false, message: "".to_string(), data: None, error: Some(e.to_string()), needs_manual_connect: None };
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let ps_cmd = format!(
+            "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Clipboard]::SetImage([System.Drawing.Image]::FromFile('{}'))",
+            path_str
+        );
+        match Command::new("powershell").arg("-NoProfile").arg("-Command").arg(&ps_cmd).output() {
+            Ok(out) => {
+                if !out.status.success() {
+                    let err = String::from_utf8_lossy(&out.stderr).to_string();
+                    let _ = std::fs::remove_file(&temp_path);
+                    return ApiResponse { success: false, message: "".to_string(), data: None, error: Some(err), needs_manual_connect: None };
+                }
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&temp_path);
+                return ApiResponse { success: false, message: "".to_string(), data: None, error: Some(e.to_string()), needs_manual_connect: None };
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(mut child) = Command::new("xclip")
+            .arg("-selection")
+            .arg("clipboard")
+            .arg("-t")
+            .arg("image/png")
+            .arg("-i")
+            .arg(&path_str)
+            .spawn() 
+        {
+            let _ = child.wait();
+        }
+    }
+
+    // 4. Clean up temp file
+    let _ = std::fs::remove_file(&temp_path);
+
+    ApiResponse {
+        success: true,
+        message: "Copied to clipboard".to_string(),
+        data: None,
+        error: None,
+        needs_manual_connect: None,
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -609,7 +742,8 @@ pub fn run() {
             start_recording,
             stop_recording,
             extract_frames,
-            extract_frame
+            extract_frame,
+            write_image_to_clipboard
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

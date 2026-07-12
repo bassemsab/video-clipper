@@ -360,25 +360,23 @@ async function copyCurrentFrameToClipboard() {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(videoPlayer, 0, 0, canvas.width, canvas.height);
         
-        canvas.toBlob(async (blob) => {
-            if (!blob) {
-                throw new Error("Failed to create blob from video frame");
-            }
-            try {
-                await navigator.clipboard.write([
-                    new ClipboardItem({ [blob.type]: blob })
-                ]);
+        try {
+            const base64Data = canvas.toDataURL('image/png');
+            const res = await invoke('write_image_to_clipboard', { base64Data });
+            if (res.success) {
                 editorStatus.innerText = 'Current frame copied to clipboard!';
-            } catch (err) {
-                console.error("Clipboard API failed:", err);
-                editorStatus.style.display = 'none';
-                editorError.style.display = 'block';
-                editorError.innerText = 'Clipboard error: ' + err;
-            } finally {
-                btn.innerText = oldText;
-                btn.disabled = false;
+            } else {
+                throw new Error(res.error || res.message);
             }
-        }, 'image/png');
+        } catch (err) {
+            console.error("Clipboard API failed:", err);
+            editorStatus.style.display = 'none';
+            editorError.style.display = 'block';
+            editorError.innerText = 'Clipboard error: ' + err;
+        } finally {
+            btn.innerText = oldText;
+            btn.disabled = false;
+        }
     } catch (e) {
         editorStatus.style.display = 'none';
         editorError.style.display = 'block';
@@ -473,29 +471,27 @@ async function copyFramesGridToClipboard() {
         }
         
         // Copy to clipboard
-        gridCanvas.toBlob(async (blob) => {
-            if (!blob) {
-                throw new Error("Failed to create blob from grid canvas");
-            }
-            try {
-                await navigator.clipboard.write([
-                    new ClipboardItem({ [blob.type]: blob })
-                ]);
+        try {
+            const base64Data = gridCanvas.toDataURL('image/png');
+            const res = await invoke('write_image_to_clipboard', { base64Data });
+            if (res.success) {
                 editorStatus.innerText = `Grid of ${frameCount} frames copied to clipboard!`;
-            } catch (err) {
-                console.error("Clipboard API failed:", err);
-                editorStatus.style.display = 'none';
-                editorError.style.display = 'block';
-                editorError.innerText = 'Clipboard error: ' + err;
-            } finally {
-                // Restore state
-                videoPlayer.currentTime = originalTime;
-                if (wasPlaying) videoPlayer.play();
-                
-                btn.innerText = oldText;
-                btn.disabled = false;
+            } else {
+                throw new Error(res.error || res.message);
             }
-        }, 'image/png');
+        } catch (err) {
+            console.error("Clipboard API failed:", err);
+            editorStatus.style.display = 'none';
+            editorError.style.display = 'block';
+            editorError.innerText = 'Clipboard error: ' + err;
+        } finally {
+            // Restore state
+            videoPlayer.currentTime = originalTime;
+            if (wasPlaying) videoPlayer.play();
+            
+            btn.innerText = oldText;
+            btn.disabled = false;
+        }
         
     } catch (e) {
         editorStatus.style.display = 'none';
