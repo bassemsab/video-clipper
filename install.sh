@@ -119,7 +119,7 @@ if [ "$(uname)" = "Darwin" ]; then
         rm -rf "/Applications/Video Clipper.app"
     fi
     
-    cp -R "src-tauri/target/release/bundle/macos/Video Clipper.app" /Applications/
+    mv "src-tauri/target/release/bundle/macos/Video Clipper.app" /Applications/
     
     echo "===================================================="
     echo "🎉 Video Clipper has been successfully installed!"
