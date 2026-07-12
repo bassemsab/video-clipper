@@ -77,17 +77,57 @@ fn get_adb_status() -> AdbStatus {
     let mut devices = vec![];
     let mut connected_names = std::collections::HashSet::new();
 
+    // Build a map of mDNS service name -> IP:Port to clean up cryptic adb-xxxx connection names
+    let mut mdns_map = std::collections::HashMap::new();
+    if let Ok(mdns_out) = Command::new(&adb_path).arg("mdns").arg("services").output() {
+        let mdns_stdout = String::from_utf8_lossy(&mdns_out.stdout);
+        for line in mdns_stdout.lines() {
+            if line.contains("_adb-tls-connect") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    let mdns_name = parts[0].split('.').next().unwrap_or(parts[0]).trim().to_string();
+                    let ip_port = parts[2].trim().to_string();
+                    if !mdns_name.is_empty() && ip_port.contains(':') {
+                        mdns_map.insert(mdns_name, ip_port);
+                    }
+                }
+            }
+        }
+    }
+
     // Parse connected devices
     let lines: Vec<&str> = stdout.lines().collect();
     if lines.len() > 1 {
         for line in &lines[1..] {
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() >= 2 {
-                let name = parts[0].trim().to_string();
+                let mut name = parts[0].trim().to_string();
                 let state = parts[1].trim().to_string();
                 if !name.is_empty() {
-                    devices.push(Device { name: name.clone(), state });
-                    connected_names.insert(name);
+                    // Clean up cryptic mDNS auto-connect names (e.g. adb-xxxx._adb-tls-connect._tcp)
+                    if name.contains("_adb-tls-connect") {
+                        let base_name = name.split('.').next().unwrap_or(&name).trim();
+                        let clean_base = base_name.split_whitespace().next().unwrap_or(base_name).to_string();
+                        
+                        if let Some(ip_port) = mdns_map.get(&clean_base) {
+                            name = ip_port.clone();
+                        } else {
+                            // Fallback: extract hardware serial
+                            let without_prefix = if clean_base.starts_with("adb-") {
+                                &clean_base[4..]
+                            } else {
+                                &clean_base
+                            };
+                            let serial = without_prefix.split('-').next().unwrap_or(without_prefix);
+                            name = format!("{} (Wireless)", serial);
+                        }
+                    }
+                    
+                    // Deduplicate connected names
+                    if !connected_names.contains(&name) {
+                        devices.push(Device { name: name.clone(), state });
+                        connected_names.insert(name);
+                    }
                 }
             }
         }
