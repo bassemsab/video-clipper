@@ -111,22 +111,22 @@ if [ "$(uname)" = "Darwin" ]; then
     export PATH="$HOME/.cargo/bin:$PATH"
     
     # Check if app is in use before building to save time
-    if pgrep -f "/Applications/Video Clipper.app" >/dev/null; then
-        echo "⚠️  Error: Video Clipper is currently running from /Applications."
+    if ps aux | grep -v grep | grep -q "/Applications/Video Clipper.app" || pgrep -x "Video Clipper" >/dev/null; then
+        echo "⚠️  Error: Video Clipper is currently running."
         echo "    Please quit the application and run this installer again."
         exit 1
     fi
 
     echo "Building production application bundle (this may take a couple of minutes on first run)..."
-    npm run tauri build
+    npm run tauri build -- --bundles app
     
     install_with_spinner() {
         local build_path="src-tauri/target/release/bundle/macos/Video Clipper.app"
         local dest_path="/Applications/Video Clipper.app"
         
         # Double check if running (in case they opened it during build)
-        if pgrep -f "$dest_path" >/dev/null; then
-            echo "⚠️  Error: Video Clipper is currently running from /Applications."
+        if ps aux | grep -v grep | grep -q "$dest_path" || pgrep -x "Video Clipper" >/dev/null; then
+            echo "⚠️  Error: Video Clipper is currently running."
             echo "    Please quit the application and run this installer again."
             exit 1
         fi
@@ -172,7 +172,6 @@ if [ "$(uname)" = "Darwin" ]; then
     echo "🎉 Video Clipper build & installation completed successfully!"
     echo "You can find your installation at:"
     echo "  App Location:  /Applications/Video Clipper.app"
-    echo "  DMG Backup:    src-tauri/target/release/bundle/dmg/"
     echo "===================================================="
 else
     echo "===================================================="
