@@ -924,34 +924,24 @@ fn save_image_to_disk(base64_data: String, video_path: String, is_grid: bool, fp
         format!("{}_frame.png", video_name)
     };
     
-    let main_output_path = video_dir.join(&filename);
-    let mut messages = Vec::new();
+    let target_path = if is_grid {
+        let fps_str = fps.unwrap_or_else(|| "60".to_string());
+        let folder_name = format!("{}_frames_{}fps", video_name, fps_str);
+        let frames_dir = video_dir.join(folder_name);
+        let _ = std::fs::create_dir_all(&frames_dir);
+        frames_dir.join(&filename)
+    } else {
+        video_dir.join(&filename)
+    };
 
-    if let Err(e) = std::fs::write(&main_output_path, &bytes) {
+    if let Err(e) = std::fs::write(&target_path, &bytes) {
         return ApiResponse { success: false, message: "".to_string(), data: None, error: Some(e.to_string()), needs_manual_connect: None };
-    }
-    messages.push(format!("Saved next to video: {}", filename));
-
-    let mut final_display_path = main_output_path.to_string_lossy().to_string();
-
-    // If it's a grid and we have an FPS, save it also in the frames extraction folder
-    if is_grid {
-        if let Some(ref fps_str) = fps {
-            let folder_name = format!("{}_frames_{}fps", video_name, fps_str);
-            let frames_dir = video_dir.join(folder_name);
-            let _ = std::fs::create_dir_all(&frames_dir);
-            let grid_in_frames_path = frames_dir.join(&filename);
-            if std::fs::write(&grid_in_frames_path, &bytes).is_ok() {
-                messages.push(format!("and also inside frames folder: {}/", grid_in_frames_path.file_name().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy()));
-                final_display_path = grid_in_frames_path.to_string_lossy().to_string();
-            }
-        }
     }
 
     ApiResponse {
         success: true,
-        message: messages.join(" "),
-        data: Some(final_display_path),
+        message: format!("Grid image saved: {}", target_path.file_name().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy()),
+        data: Some(target_path.to_string_lossy().to_string()),
         error: None,
         needs_manual_connect: None,
     }
