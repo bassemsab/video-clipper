@@ -1164,3 +1164,14 @@ video::-webkit-media-controls-fullscreen-button {
     box-shadow: 0 0 12px rgba(59, 130, 246, 0.15);
 }
 
+.save-buttons-row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+.save-buttons-row .btn-extract-main {
+    flex: 1;
+}
+
+
