@@ -1042,6 +1042,20 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
+        .setup(|_app| {
+            #[cfg(target_os = "macos")]
+            {
+                if let Ok(exe_path) = std::env::current_exe() {
+                    if exe_path.to_string_lossy().contains("/Applications/Video Clipper.app") {
+                        let build_app_path = std::path::PathBuf::from("/Users/bassem/Documents/projects/video-clipper/src-tauri/target/release/bundle/macos/Video Clipper.app");
+                        if build_app_path.exists() {
+                            let _ = std::fs::remove_dir_all(&build_app_path);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_adb_status,
             adb_pair,

@@ -113,17 +113,11 @@ if [ "$(uname)" = "Darwin" ]; then
     echo "Building production application bundle (this may take a couple of minutes on first run)..."
     npm run tauri build
     
-    echo "Installing Video Clipper to /Applications..."
-    # Remove old version if exists
-    if [ -d "/Applications/Video Clipper.app" ]; then
-        rm -rf "/Applications/Video Clipper.app"
-    fi
-    
-    mv "src-tauri/target/release/bundle/macos/Video Clipper.app" /Applications/
-    
     echo "===================================================="
-    echo "🎉 Video Clipper has been successfully installed!"
-    echo "You can now find 'Video Clipper' in your Applications folder/Launchpad."
+    echo "🎉 Video Clipper build completed successfully!"
+    echo "You can find your bundles at:"
+    echo "  DMG Installer: src-tauri/target/release/bundle/dmg/"
+    echo "  App Bundle:    src-tauri/target/release/bundle/macos/"
     echo "===================================================="
 else
     echo "===================================================="
