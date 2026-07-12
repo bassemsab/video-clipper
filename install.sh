@@ -101,8 +101,30 @@ fi
 echo "Installing application dependencies..."
 npm install
 
-echo "===================================================="
-echo "🎉 Setup Completed Successfully!"
-echo "To start the application in development mode, run:"
-echo "  cd video-clipper && npm run tauri dev"
-echo "===================================================="
+# 5. Build and install to Applications folder on macOS
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # Make sure Rust compiler is in path
+    export PATH="$HOME/.cargo/bin:$PATH"
+    
+    echo "Building production application bundle (this may take a couple of minutes on first run)..."
+    npm run tauri build
+    
+    echo "Installing Video Clipper to /Applications..."
+    # Remove old version if exists
+    if [ -d "/Applications/Video Clipper.app" ]; then
+        rm -rf "/Applications/Video Clipper.app"
+    fi
+    
+    cp -R "src-tauri/target/release/bundle/macos/Video Clipper.app" /Applications/
+    
+    echo "===================================================="
+    echo "🎉 Video Clipper has been successfully installed!"
+    echo "You can now find 'Video Clipper' in your Applications folder/Launchpad."
+    echo "===================================================="
+else
+    echo "===================================================="
+    echo "🎉 Setup Completed Successfully!"
+    echo "To run in development mode:"
+    echo "  cd video-clipper && npm run tauri dev"
+    echo "===================================================="
+fi
