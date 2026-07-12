@@ -6,7 +6,7 @@ echo "=== Video Clipper Bootstrapper & Dependency Installer ==="
 # 1. Check/Install Git
 if ! command -v git &> /dev/null; then
     echo "Git is missing. Installing git..."
-    if [[ "$OSTYPE" == "darwin"* ]]; then
+    if [ "$(uname)" = "Darwin" ]; then
         if ! command -v brew &> /dev/null; then
             echo "Homebrew is required to install Git and dependencies. Please install Homebrew: https://brew.sh/"
             exit 1
@@ -18,7 +18,7 @@ if ! command -v git &> /dev/null; then
 fi
 
 # 2. Check/Install ADB, FFmpeg, Node.js & Rust
-if [[ "$OSTYPE" == "darwin"* ]]; then
+if [ "$(uname)" = "Darwin" ]; then
     # macOS installation
     if ! command -v brew &> /dev/null; then
         echo "Homebrew is not installed. Please install it first: https://brew.sh/"
@@ -106,7 +106,7 @@ echo "Installing application dependencies..."
 npm install
 
 # 5. Build and install to Applications folder on macOS
-if [[ "$OSTYPE" == "darwin"* ]]; then
+if [ "$(uname)" = "Darwin" ]; then
     # Make sure Rust compiler is in path
     export PATH="$HOME/.cargo/bin:$PATH"
     
