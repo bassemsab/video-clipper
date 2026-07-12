@@ -13,3 +13,7 @@
 
 ## 4. UI/UX Rules
 * **No Sidebar Status Text**: Do not place long status or error message tags directly in the sidebar panel. Use the floating `showToast(message, type)` notification system to keep the layout spacious and prevent label overlapping.
+
+## 5. Build Procedures
+* **No Automatic Production Builds**: Never run `npx tauri build` or generate production installer bundles (`.dmg`, `.app`) automatically. Only compile release builds when the user explicitly requests one. For development iterations, rely on dev mode (`npm run tauri dev`) or simple checks (`cargo check`).
+
