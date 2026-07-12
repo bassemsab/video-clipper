@@ -647,44 +647,48 @@ async function toggleRecording() {
             }
         }, 50);
     } else {
-        // Pre-flight check
-        try {
-            const status = await invoke('get_adb_status');
-            lastStatusDevices = status.devices || [];
-            if (!status.installed || status.devices.length === 0) {
-                openSettings();
-                return;
+        // Set loader states immediately
+        isPreparingRecording = true;
+        btnRecord.innerHTML = '<span class="loader"></span> Starting record...';
+        btnRecord.classList.remove('recording-active');
+        btnRecord.disabled = true;
+        
+        recordingStatus.style.display = 'block';
+        recordingStatus.innerHTML = '<span class="loader status-loader"></span> Preparing screen recording...';
+
+        // Perform adb checks and start recording asynchronously
+        setTimeout(async () => {
+            try {
+                const status = await invoke('get_adb_status');
+                lastStatusDevices = status.devices || [];
+                if (!status.installed || status.devices.length === 0) {
+                    openSettings();
+                    resetRecordButton();
+                    return;
+                }
+                
+                if (!activeDeviceId && status.devices.length > 0) {
+                    activeDeviceId = status.devices[0].name;
+                }
+                
+                const res = await invoke('start_recording', { deviceId: activeDeviceId });
+                if (!res.success) {
+                    throw new Error(res.error);
+                }
+                
+                isPreparingRecording = false;
+                isRecording = true;
+                btnRecord.innerHTML = '⏹ Stop & Load Video';
+                btnRecord.classList.add('recording-active');
+                btnRecord.disabled = false;
+                recordingStatus.innerHTML = 'Recording in progress... Click above to stop';
+            } catch (e) {
+                isPreparingRecording = false;
+                landingError.style.display = 'block';
+                landingError.innerText = e.message || e;
+                resetRecordButton();
             }
-            
-            if (!activeDeviceId && status.devices.length > 0) {
-                activeDeviceId = status.devices[0].name;
-            }
-            
-            isPreparingRecording = true;
-            btnRecord.innerHTML = '<span class="loader"></span> Starting record...';
-            btnRecord.classList.remove('recording-active');
-            btnRecord.disabled = true;
-            
-            recordingStatus.style.display = 'block';
-            recordingStatus.innerHTML = '<span class="loader status-loader"></span> Preparing screen recording...';
-            
-            const res = await invoke('start_recording', { deviceId: activeDeviceId });
-            if (!res.success) {
-                throw new Error(res.error);
-            }
-            
-            isPreparingRecording = false;
-            isRecording = true;
-            btnRecord.innerHTML = '⏹ Stop & Load Video';
-            btnRecord.classList.add('recording-active');
-            btnRecord.disabled = false;
-            recordingStatus.innerHTML = 'Recording in progress... Click above to stop';
-        } catch (e) {
-            isPreparingRecording = false;
-            landingError.style.display = 'block';
-            landingError.innerText = e.message || e;
-            resetRecordButton();
-        }
+        }, 50);
     }
 }
 
