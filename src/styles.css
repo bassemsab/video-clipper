@@ -1025,12 +1025,6 @@ body {
     margin-right: 8px;
 }
 
-.loader.status-loader {
-    border: 2px solid rgba(16, 185, 129, 0.2);
-    border-top: 2px solid var(--success-color);
-    width: 12px;
-    height: 12px;
-}
 
 @keyframes spin {
     0% { transform: rotate(0deg); }

@@ -654,7 +654,7 @@ async function toggleRecording() {
         btnRecord.disabled = true;
         
         recordingStatus.style.display = 'block';
-        recordingStatus.innerHTML = '<span class="loader status-loader"></span> Preparing screen recording...';
+        recordingStatus.innerText = 'Preparing screen recording...';
 
         // Perform adb checks and start recording asynchronously
         setTimeout(async () => {
