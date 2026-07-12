@@ -1043,23 +1043,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
         .setup(|_app| {
-            #[cfg(target_os = "macos")]
-            {
-                if let Ok(exe_path) = std::env::current_exe() {
-                    if exe_path.to_string_lossy().contains("/Applications/Video Clipper.app") {
-                        let possible_paths = vec![
-                            "/Users/bassem/Documents/projects/video-clipper/src-tauri/target/release/bundle/macos/Video Clipper.app",
-                            "/Users/bassem/video-clipper/src-tauri/target/release/bundle/macos/Video Clipper.app",
-                        ];
-                        for path in possible_paths {
-                            let build_app_path = std::path::PathBuf::from(path);
-                            if build_app_path.exists() {
-                                let _ = std::fs::remove_dir_all(&build_app_path);
-                            }
-                        }
-                    }
-                }
-            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
