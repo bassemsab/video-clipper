@@ -258,10 +258,13 @@ function getFPS() {
 function toggleCurrentFrameMode(checked) {
     currentFrameMode = checked;
     const fpsContainer = document.getElementById('fpsInputContainer');
+    const btnSaveGrid = document.getElementById('btnSaveGrid');
     if (checked) {
         fpsContainer.classList.add('disabled');
+        if (btnSaveGrid) btnSaveGrid.style.display = 'none';
     } else {
         fpsContainer.classList.remove('disabled');
+        if (btnSaveGrid) btnSaveGrid.style.display = 'block';
     }
     updateOutputPathDisplay();
 }
@@ -423,63 +426,53 @@ async function copyCurrentFrameToClipboard() {
     }
 }
 
-async function copyFramesGridToClipboard() {
-    const start = startTime;
-    const end = endTime;
-    const fps = getFPS();
-    const btn = document.getElementById('btnCopyToClipboard');
-    
+async function generateGridCanvas(start, end, fps) {
     const duration = end - start;
     if (duration <= 0) {
-        showToast('Invalid start/end points. Duration must be positive.', 'error');
-        return;
+        throw new Error('Invalid start/end points. Duration must be positive.');
     }
     
     const frameCount = Math.max(1, Math.round(duration * fps));
     if (frameCount > 120) {
         if (!confirm(`Generating a grid with ${frameCount} frames might take a while. Do you want to proceed?`)) {
-            return;
+            return null;
         }
     }
+
+    const wasPlaying = !videoPlayer.paused;
+    if (wasPlaying) videoPlayer.pause();
+    const originalTime = videoPlayer.currentTime;
     
-    const oldText = btn.innerText;
-    btn.innerHTML = '<span class="loader" style="width:10px; height:10px; border-width:1px; margin-right:4px;"></span>Generating Grid...';
-    btn.disabled = true;
+    // Define grid geometry
+    const cols = Math.ceil(Math.sqrt(frameCount));
+    const rows = Math.ceil(frameCount / cols);
+    
+    // Scale down frame size in grid to keep it memory efficient
+    const frameWidth = 240;
+    const frameHeight = Math.round(frameWidth * (videoPlayer.videoHeight / videoPlayer.videoWidth));
+    
+    const gridCanvas = document.createElement('canvas');
+    gridCanvas.width = cols * frameWidth;
+    gridCanvas.height = rows * frameHeight;
+    const gridCtx = gridCanvas.getContext('2d');
+    
+    // Background color
+    gridCtx.fillStyle = '#1e1e24';
+    gridCtx.fillRect(0, 0, gridCanvas.width, gridCanvas.height);
+    
+    // Seek & draw sync helper
+    const seekToTime = (time) => {
+        return new Promise((resolve) => {
+            const onSeeked = () => {
+                videoPlayer.removeEventListener('seeked', onSeeked);
+                resolve();
+            };
+            videoPlayer.addEventListener('seeked', onSeeked);
+            videoPlayer.currentTime = time;
+        });
+    };
     
     try {
-        const wasPlaying = !videoPlayer.paused;
-        if (wasPlaying) videoPlayer.pause();
-        const originalTime = videoPlayer.currentTime;
-        
-        // Define grid geometry
-        const cols = Math.ceil(Math.sqrt(frameCount));
-        const rows = Math.ceil(frameCount / cols);
-        
-        // Scale down frame size in grid to keep it memory efficient
-        const frameWidth = 240;
-        const frameHeight = Math.round(frameWidth * (videoPlayer.videoHeight / videoPlayer.videoWidth));
-        
-        const gridCanvas = document.createElement('canvas');
-        gridCanvas.width = cols * frameWidth;
-        gridCanvas.height = rows * frameHeight;
-        const gridCtx = gridCanvas.getContext('2d');
-        
-        // Background color
-        gridCtx.fillStyle = '#1e1e24';
-        gridCtx.fillRect(0, 0, gridCanvas.width, gridCanvas.height);
-        
-        // Seek & draw sync helper
-        const seekToTime = (time) => {
-            return new Promise((resolve) => {
-                const onSeeked = () => {
-                    videoPlayer.removeEventListener('seeked', onSeeked);
-                    resolve();
-                };
-                videoPlayer.addEventListener('seeked', onSeeked);
-                videoPlayer.currentTime = time;
-            });
-        };
-        
         for (let i = 0; i < frameCount; i++) {
             const t = start + (i / fps);
             if (t > end) break;
@@ -501,33 +494,79 @@ async function copyFramesGridToClipboard() {
             gridCtx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
             gridCtx.fillText(`#${i+1} (+${(t - start).toFixed(3)}s)`, x + 8, y + 16);
         }
+    } finally {
+        // Restore state
+        videoPlayer.currentTime = originalTime;
+        if (wasPlaying) videoPlayer.play();
+    }
+    
+    return { gridCanvas, frameCount };
+}
+
+async function copyFramesGridToClipboard() {
+    const start = startTime;
+    const end = endTime;
+    const fps = getFPS();
+    const btn = document.getElementById('btnCopyToClipboard');
+    const oldText = btn.innerText;
+    
+    try {
+        btn.innerHTML = '<span class="loader" style="width:10px; height:10px; border-width:1px; margin-right:4px;"></span>Generating Grid...';
+        btn.disabled = true;
         
-        // Copy to clipboard
-        try {
-            const base64Data = gridCanvas.toDataURL('image/png');
-            const res = await invoke('write_image_to_clipboard', { base64Data });
-            if (res.success) {
-                showToast(`Grid of ${frameCount} frames copied to clipboard!`, 'success');
-            } else {
-                throw new Error(res.error || res.message);
-            }
-        } catch (err) {
-            console.error("Clipboard API failed:", err);
-            showToast('Clipboard error: ' + err, 'error');
-        } finally {
-            // Restore state
-            videoPlayer.currentTime = originalTime;
-            if (wasPlaying) videoPlayer.play();
-            
-            btn.innerText = oldText;
-            btn.disabled = false;
+        const result = await generateGridCanvas(start, end, fps);
+        if (!result) return; // cancelled
+        
+        const { gridCanvas, frameCount } = result;
+        const base64Data = gridCanvas.toDataURL('image/png');
+        const res = await invoke('write_image_to_clipboard', { base64Data });
+        if (res.success) {
+            showToast(`Grid of ${frameCount} frames copied to clipboard!`, 'success');
+        } else {
+            throw new Error(res.error || res.message);
         }
-        
     } catch (e) {
         showToast(e.message || e, 'error');
+    } finally {
         btn.innerText = oldText;
         btn.disabled = false;
     }
+}
+
+async function saveFramesGridToDisk() {
+    const start = startTime;
+    const end = endTime;
+    const fps = getFPS();
+    const btn = document.getElementById('btnSaveGrid');
+    const oldText = btn.innerText;
+    
+    try {
+        btn.innerHTML = '<span class="loader" style="width:10px; height:10px; border-width:1px; margin-right:4px;"></span>Saving Grid...';
+        btn.disabled = true;
+        
+        const result = await generateGridCanvas(start, end, fps);
+        if (!result) return; // cancelled
+        
+        const { gridCanvas } = result;
+        const base64Data = gridCanvas.toDataURL('image/png');
+        
+        const videoPath = document.getElementById('fullVideoPathDisplay').innerText;
+        const res = await invoke('save_image_to_disk', { base64Data, videoPath, isGrid: true });
+        if (res.success) {
+            showToast(res.message, 'success');
+        } else {
+            throw new Error(res.error || res.message);
+        }
+    } catch (e) {
+        showToast(e.message || e, 'error');
+    } finally {
+        btn.innerText = oldText;
+        btn.disabled = false;
+    }
+}
+
+function handleSaveGridAction() {
+    saveFramesGridToDisk();
 }
 
 // ADB / Recording Controls

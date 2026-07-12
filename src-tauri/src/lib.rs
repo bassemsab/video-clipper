@@ -815,6 +815,46 @@ fn extract_frame(time: f64, state: State<'_, AppState>) -> ApiResponse<String> {
 }
 
 #[tauri::command]
+fn save_image_to_disk(base64_data: String, video_path: String, is_grid: bool) -> ApiResponse<String> {
+    // 1. Decode base64 image data to bytes
+    let clean_base64 = base64_data
+        .replace("data:image/png;base64,", "")
+        .replace("data:image/jpeg;base64,", "")
+        .trim()
+        .to_string();
+
+    let bytes = match base64::Engine::decode(&base64::prelude::BASE64_STANDARD, &clean_base64) {
+        Ok(b) => b,
+        Err(e) => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some(e.to_string()), needs_manual_connect: None }
+    };
+
+    // 2. Resolve output directory and filename based on original video path
+    let video_path_buf = PathBuf::from(&video_path);
+    let video_dir = video_path_buf.parent().unwrap_or(Path::new("."));
+    let video_name = video_path_buf.file_stem().unwrap_or(std::ffi::OsStr::new("video")).to_string_lossy();
+    
+    let filename = if is_grid {
+        format!("{}_grid.png", video_name)
+    } else {
+        format!("{}_frame.png", video_name)
+    };
+    
+    let output_path = video_dir.join(filename);
+
+    if let Err(e) = std::fs::write(&output_path, bytes) {
+        return ApiResponse { success: false, message: "".to_string(), data: None, error: Some(e.to_string()), needs_manual_connect: None };
+    }
+
+    ApiResponse {
+        success: true,
+        message: format!("Grid image saved: {}", output_path.file_name().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy()),
+        data: Some(output_path.to_string_lossy().to_string()),
+        error: None,
+        needs_manual_connect: None,
+    }
+}
+
+#[tauri::command]
 fn write_image_to_clipboard(base64_data: String) -> ApiResponse<String> {
     // 1. Decode base64 image data to bytes
     let clean_base64 = base64_data
@@ -919,7 +959,8 @@ pub fn run() {
             stop_recording,
             extract_frames,
             extract_frame,
-            write_image_to_clipboard
+            write_image_to_clipboard,
+            save_image_to_disk
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
