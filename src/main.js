@@ -659,7 +659,7 @@ async function checkAdbStatus() {
                 
                 const name = document.createElement('span');
                 name.className = 'device-name';
-                name.innerText = d.name;
+                name.innerText = d.display_name || d.name;
                 name.title = d.name;
                 
                 const badge = document.createElement('span');
@@ -723,7 +723,7 @@ async function checkAdbStatus() {
                 
                 const name = document.createElement('span');
                 name.className = 'device-name';
-                name.innerText = d.name;
+                name.innerText = d.display_name || d.name;
                 name.title = d.name;
                 
                 const badge = document.createElement('span');
