@@ -1,0 +1,108 @@
+#!/bin/bash
+set -e
+
+echo "=== Video Clipper Bootstrapper & Dependency Installer ==="
+
+# 1. Check/Install Git
+if ! command -v git &> /dev/null; then
+    echo "Git is missing. Installing git..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        if ! command -v brew &> /dev/null; then
+            echo "Homebrew is required to install Git and dependencies. Please install Homebrew: https://brew.sh/"
+            exit 1
+        fi
+        brew install git
+    else
+        sudo apt update && sudo apt install -y git
+    fi
+fi
+
+# 2. Check/Install ADB, FFmpeg, Node.js & Rust
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS installation
+    if ! command -v brew &> /dev/null; then
+        echo "Homebrew is not installed. Please install it first: https://brew.sh/"
+        exit 1
+    fi
+    
+    if ! command -v adb &> /dev/null; then
+        echo "Installing ADB..."
+        brew install android-platform-tools
+    else
+        echo "ADB is already installed."
+    fi
+    
+    if ! command -v ffmpeg &> /dev/null; then
+        echo "Installing FFmpeg..."
+        brew install ffmpeg
+    else
+        echo "FFmpeg is already installed."
+    fi
+    
+    if ! command -v node &> /dev/null; then
+        echo "Installing Node.js..."
+        brew install node
+    else
+        echo "Node.js is already installed."
+    fi
+
+    if ! command -v rustc &> /dev/null; then
+        echo "Installing Rust compiler..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source "$HOME/.cargo/env"
+    else
+        echo "Rust is already installed."
+    fi
+else
+    # Linux installation
+    if ! command -v adb &> /dev/null; then
+        echo "Installing ADB..."
+        sudo apt update && sudo apt install -y android-tools-adb
+    else
+        echo "ADB is already installed."
+    fi
+    
+    if ! command -v ffmpeg &> /dev/null; then
+        echo "Installing FFmpeg..."
+        sudo apt update && sudo apt install -y ffmpeg
+    else
+        echo "FFmpeg is already installed."
+    fi
+    
+    if ! command -v node &> /dev/null; then
+        echo "Installing Node.js & NPM..."
+        curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+        sudo apt install -y nodejs
+    else
+        echo "Node.js is already installed."
+    fi
+
+    if ! command -v rustc &> /dev/null; then
+        echo "Installing Rust compiler..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source "$HOME/.cargo/env"
+    else
+        echo "Rust is already installed."
+    fi
+fi
+
+# 3. Clone Repository
+echo "Cloning Video Clipper repository..."
+if [ -d "video-clipper" ]; then
+    echo "Folder 'video-clipper' already exists. Pulling latest updates..."
+    cd video-clipper
+    git pull
+else
+    git clone https://github.com/bassemsab/video-clipper.git
+    cd video-clipper
+fi
+
+# 4. Install npm packages
+echo "Installing application dependencies..."
+npm install
+
+echo "===================================================="
+echo "🎉 Setup Completed Successfully!"
+echo "To start the application in development mode, run:"
+echo "  cd video-clipper && npm run tauri dev"
+echo "===================================================="

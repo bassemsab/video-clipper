@@ -9,6 +9,23 @@ When pair-programming with AI agents, they cannot directly "see" the visual outp
 
 ---
 
+## ⚡ Quick Start (One-liner Installation)
+
+You can install all system dependencies (ADB, FFmpeg, Node.js, and Rust), clone the repository, and set up everything automatically in one go:
+
+### 🍏 macOS / 🐧 Linux
+```bash
+curl -fsSL https://raw.githubusercontent.com/bassemsab/video-clipper/main/install.sh | bash
+```
+
+### 🪟 Windows
+Run the following inside an administrator PowerShell terminal:
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/bassemsab/video-clipper/main/install.ps1'))
+```
+
+---
+
 ## 🚀 Key Features
 
 * **Wireless ADB Screen Recording**: Toggle developer options on your Android phone, pair once, and connect wirelessly. The app remembers paired device IPs and supports instant port adjustments.
