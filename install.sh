@@ -77,6 +77,10 @@ else
         echo "Node.js is already installed."
     fi
 
+    # Install Tauri Linux system dependencies
+    echo "Installing Tauri compilation dependencies (build-essential, GTK, WebKit, SSL)..."
+    sudo apt install -y build-essential curl wget file libssl-dev libgtk-3-dev libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
     if ! command -v rustc &> /dev/null; then
         echo "Installing Rust compiler..."
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
