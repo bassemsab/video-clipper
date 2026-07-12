@@ -194,6 +194,13 @@ async function loadVideoPath(path) {
                     seekSlider.value = (videoPlayer.currentTime / videoPlayer.duration) * 100;
                 }
                 updateTimelineBar();
+                
+                // Keep playback within [startTime, endTime]
+                if (!videoPlayer.paused && videoPlayer.currentTime >= endTime) {
+                    videoPlayer.pause();
+                    videoPlayer.currentTime = startTime;
+                    btnPlayToggle.innerText = "Play";
+                }
             };
 
             videoPlayer.onended = () => {
@@ -239,6 +246,9 @@ function seekVideo(val) {
 
 function togglePlayPause() {
     if (videoPlayer.paused) {
+        if (videoPlayer.currentTime < startTime || videoPlayer.currentTime >= endTime) {
+            videoPlayer.currentTime = startTime;
+        }
         videoPlayer.play();
         btnPlayToggle.innerText = "Pause";
     } else {
@@ -302,6 +312,12 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {
         e.preventDefault();
         togglePlayPause();
+    } else if (e.code === 'KeyI') {
+        e.preventDefault();
+        setCurrentAsStart();
+    } else if (e.code === 'KeyO') {
+        e.preventDefault();
+        setCurrentAsEnd();
     } else if (e.code === 'ArrowLeft') {
         e.preventDefault();
         videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime - 1);
@@ -1114,25 +1130,7 @@ function copyInstallCmd() {
     setTimeout(() => { btn.innerText = "Copy"; }, 2000);
 }
 
-// Keyboard shortcuts
-window.addEventListener('keydown', (e) => {
-    // If inside input, ignore shortcuts
-    if (document.activeElement.tagName === 'INPUT') return;
-    
-    if (e.code === 'Space') {
-        e.preventDefault();
-        if (videoPlayer.paused) videoPlayer.play();
-        else videoPlayer.pause();
-    } else if (e.code === 'KeyI') {
-        setCurrentAsStart();
-    } else if (e.code === 'KeyO') {
-        setCurrentAsEnd();
-    } else if (e.code === 'ArrowLeft') {
-        stepFrame(-1);
-    } else if (e.code === 'ArrowRight') {
-        stepFrame(1);
-    }
-});
+
 
 // Copy path text to clipboard
 async function copyPath(elementId) {
