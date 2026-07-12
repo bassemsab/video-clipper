@@ -587,7 +587,7 @@ async function saveFramesGridToDisk() {
         const base64Data = gridCanvas.toDataURL('image/png');
         
         const videoPath = document.getElementById('fullVideoPathDisplay').innerText;
-        const res = await invoke('save_image_to_disk', { base64Data, videoPath, isGrid: true });
+        const res = await invoke('save_image_to_disk', { base64Data, videoPath, isGrid: true, fps: fps.toString() });
         if (res.success) {
             showToast(res.message, 'success', res.data);
         } else {
@@ -664,7 +664,7 @@ async function toggleRecording() {
             btnRecord.disabled = true;
             
             recordingStatus.style.display = 'block';
-            recordingStatus.innerText = 'Preparing screen recording...';
+            recordingStatus.innerHTML = '<span class="loader status-loader"></span> Preparing screen recording...';
             
             const res = await invoke('start_recording', { deviceId: activeDeviceId });
             if (!res.success) {
@@ -675,7 +675,7 @@ async function toggleRecording() {
             btnRecord.innerHTML = '⏹ Stop & Load Video';
             btnRecord.classList.add('recording-active');
             btnRecord.disabled = false;
-            recordingStatus.innerText = 'Recording in progress... Click above to stop';
+            recordingStatus.innerHTML = '🔴 Recording in progress... Click above to stop';
         } catch (e) {
             landingError.style.display = 'block';
             landingError.innerText = e.message || e;

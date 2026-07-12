@@ -588,6 +588,8 @@ body {
     font-weight: 600;
     cursor: pointer;
     transition: background 0.2s ease;
+    min-width: 75px;
+    text-align: center;
 }
 
 .btn-play-toggle:hover {
@@ -1021,6 +1023,13 @@ body {
     display: inline-block;
     vertical-align: middle;
     margin-right: 8px;
+}
+
+.loader.status-loader {
+    border: 2px solid rgba(16, 185, 129, 0.2);
+    border-top: 2px solid var(--success-color);
+    width: 12px;
+    height: 12px;
 }
 
 @keyframes spin {
