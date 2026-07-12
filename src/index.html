@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Clipper</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Settings button (shown on landing page) -->
+        <button class="btn-settings" id="btnSettings" onclick="openSettings()">⚙ Settings</button>
+
+        <!-- LANDING STATE -->
+        <div class="landing-state" id="landingState">
+            <h1 class="app-title">Video Clipper</h1>
+            
+            <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                <p>Drag and drop a video file here, or click to browse</p>
+                <input type="file" id="fileInput" accept="video/mp4" style="display: none;" onchange="handleFileSelect(event)">
+            </div>
+            
+            <div class="capture-box">
+                <p class="capture-title">Or capture directly from your device:</p>
+                <button class="btn-record" id="btnRecord" onclick="toggleRecording()">
+                    📱 Record Android Screen (ADB)
+                </button>
+                <p class="error-msg" id="landingError" style="display: none;"></p>
+                <p class="status-msg" id="recordingStatus" style="display: none;"></p>
+            </div>
+        </div>
+
+        <!-- EDITOR STATE -->
+        <div class="editor-state" id="editorState" style="display: none;">
+            <div class="header-bar">
+                <button class="btn-back" onclick="goHome()">← Back to Home (Discard)</button>
+                
+                <!-- Video & Output Path Info Card at top-right -->
+                <div class="info-card-top">
+                    <div class="info-row-top">
+                        <div class="info-value-wrapper">
+                            <div class="info-box-header">TARGET</div>
+                            <div class="info-box-content">
+                                <span class="info-value-top" id="outputPathDisplay">Loading...</span>
+                                <button class="btn-copy-path" onclick="copyPath('outputPathDisplay')" title="Copy Output Path">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="info-row-top">
+                        <div class="info-value-wrapper">
+                            <div class="info-box-header">SOURCE</div>
+                            <div class="info-box-content">
+                                <span class="info-value-top" id="fullVideoPathDisplay">Loading...</span>
+                                <button class="btn-copy-path" onclick="copyPath('fullVideoPathDisplay')" title="Copy Source Path">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="editor-workspace">
+                <div class="video-container">
+                    <video id="videoPlayer" disablepictureinpicture x-webkit-airplay="deny" controlsList="nodownload noremoteplayback"></video>
+                </div>
+
+                <div class="editor-sidebar">
+                    <!-- Start Point Card -->
+                    <div class="control-card">
+                        <span class="card-label">Start Point</span>
+                        <span class="time-large" id="startTimeDisplay">00:00.000</span>
+                        <button class="btn-primary" onclick="setCurrentAsStart()">Set</button>
+                    </div>
+
+                    <!-- End Point Card -->
+                    <div class="control-card">
+                        <span class="card-label">End Point</span>
+                        <span class="time-large" id="endTimeDisplay">00:00.000</span>
+                        <button class="btn-primary" onclick="setCurrentAsEnd()">Set</button>
+                    </div>
+
+                    <!-- FPS Selector Input with Current Frame Switch -->
+                    <div class="control-card">
+                        <div class="control-card-header">
+                            <span class="card-label">Frame Rate (FPS)</span>
+                            <label class="switch-container">
+                                <span class="switch-label">Current Frame</span>
+                                <input type="checkbox" id="currentFrameSwitch" onchange="toggleCurrentFrameMode(this.checked)">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="fps-input-container" id="fpsInputContainer">
+                            <input type="number" id="fpsInput" min="1" max="320" value="60" class="fps-text-input" oninput="updateOutputPathDisplay()">
+                            <span class="fps-suffix">fps</span>
+                        </div>
+                    </div>
+ 
+                    <!-- Action Buttons -->
+                    <div class="action-card-group">
+                        <button class="btn-extract-main" id="btnCopyToClipboard" onclick="handleCopyToClipboard()">Copy to Clipboard</button>
+                        <button class="btn-extract-main" id="btnSave" onclick="handleSaveAction()">Save</button>
+                    </div>
+
+                    <!-- Keyboard Shortcuts Card -->
+                    <div class="shortcuts-card">
+                        <span class="card-label">Keyboard Shortcuts</span>
+                        <div class="shortcut-row">
+                            <span>Skip 1 second</span>
+                            <span class="shortcut-keys"><kbd>←</kbd> / <kbd>→</kbd></span>
+                        </div>
+                        <div class="shortcut-row">
+                            <span>Skip 1 frame (1/60s)</span>
+                            <span class="shortcut-keys"><kbd>,</kbd> / <kbd>.</kbd></span>
+                        </div>
+                        <div class="shortcut-row">
+                            <span>Play / Pause</span>
+                            <span class="shortcut-keys"><kbd>Space</kbd></span>
+                        </div>
+                    </div>
+
+                    <p class="status-msg" id="editorStatus" style="display: none;"></p>
+                    <p class="error-msg" id="editorError" style="display: none;"></p>
+                </div>
+            </div>
+
+            <!-- Bottom Playback Seekbar Controls -->
+            <div class="bottom-playback-bar">
+                <button class="btn-play-toggle" id="btnPlayToggle" onclick="togglePlayPause()">Play</button>
+                <span class="time-stamp" id="currentTimeDisplay">00:00.000</span>
+                <div class="seek-slider-wrapper">
+                    <input type="range" id="seekSlider" class="seek-slider" min="0" max="100" value="0" step="0.01" oninput="seekVideo(this.value)">
+                    <div class="timeline-selected-bar" id="timelineSelected"></div>
+                </div>
+                <span class="time-stamp" id="totalTimeDisplay">00:00.000</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- SETTINGS MODAL -->
+    <div class="modal-overlay" id="settingsModal" onclick="if(event.target===this) closeSettings()">
+            <div class="modal-content">
+                <button class="modal-close" onclick="closeSettings()">×</button>
+                
+                <h2 class="modal-title">⚙ ADB Settings</h2>
+                
+                <!-- ADB Status Area -->
+                <div class="settings-section" id="adbInstalledArea" style="display: none;">
+                    <p class="adb-ready-text">✓ ADB is installed and ready.</p>
+                </div>
+                
+                <div class="settings-section" id="adbMissingArea" style="display: none;">
+                    <p class="adb-missing-text">⚠️ ADB was not found on your system.</p>
+                    <p class="adb-missing-desc">Please install it or add it to your system PATH. Recommended commands:</p>
+                    <div class="code-tabs">
+                        <button class="code-tab active" onclick="switchTab('mac')">macOS</button>
+                        <button class="code-tab" onclick="switchTab('win')">Windows</button>
+                        <button class="code-tab" onclick="switchTab('linux')">Linux</button>
+                    </div>
+                    <div class="code-box-wrapper">
+                        <pre class="code-box"><code id="installCommand">brew install android-platform-tools</code></pre>
+                        <button class="btn-copy" onclick="copyInstallCmd()">Copy</button>
+                    </div>
+                </div>
+
+                <!-- Wireless Pairing Area -->
+                <div class="settings-section">
+                    <h3>Wireless Pairing (Android 11+)</h3>
+                    <div class="pairing-form">
+                        <div class="input-group">
+                            <input type="text" id="adbCode" placeholder="6-digit Pairing Code">
+                        </div>
+                        <div class="input-group">
+                            <input type="text" id="adbIp" placeholder="IP Address & Port (e.g. 192.168.1.5:44444)">
+                        </div>
+                        <button class="btn-pair" id="btnPair" onclick="pairAdb()">Connect / Pair</button>
+                    </div>
+                    <p id="pairStatus" class="pair-status-text"></p>
+                </div>
+
+                <!-- Connected & Saved Devices Area -->
+                <div class="settings-section adb-status">
+                    <h3>Connected / Saved Devices</h3>
+                    <div id="savedDevicesList" class="saved-devices-list">
+                        <div class="list-placeholder">Checking devices...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="main.js"></script>
+    </body>
+</html>
