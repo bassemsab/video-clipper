@@ -742,6 +742,9 @@ async function checkAdbStatus() {
             let savedIps = JSON.parse(localStorage.getItem('savedDeviceIps') || '[]');
             let forgottenIps = JSON.parse(localStorage.getItem('forgottenDeviceIps') || '[]');
             
+            // Filter savedIps to exclude forgotten/blacklisted ones
+            savedIps = savedIps.filter(ip => !forgottenIps.includes(ip));
+            
             // Filter out any devices that are forgotten/deleted
             const allDevices = (status.devices || []).filter(d => {
                 const ip = d.name.includes(':') ? d.name.split(':')[0] : d.name;
@@ -1115,52 +1118,48 @@ async function disconnectSavedDevice(ipPort, btn) {
 }
 
 function forgetSavedDevice(ip) {
-    if (confirm(`Forget saved device IP ${ip}?`)) {
-        // Remove from saved list
-        let savedIps = JSON.parse(localStorage.getItem('savedDeviceIps') || '[]');
-        savedIps = savedIps.filter(item => item !== ip);
-        localStorage.setItem('savedDeviceIps', JSON.stringify(savedIps));
-        
-        // Add to forgotten/blacklisted list
-        let forgottenIps = JSON.parse(localStorage.getItem('forgottenDeviceIps') || '[]');
-        if (!forgottenIps.includes(ip)) {
-            forgottenIps.push(ip);
-            localStorage.setItem('forgottenDeviceIps', JSON.stringify(forgottenIps));
-        }
-
-        showToast(`Forgot device IP ${ip}`, "success");
-        checkAdbStatus();
+    // Remove from saved list
+    let savedIps = JSON.parse(localStorage.getItem('savedDeviceIps') || '[]');
+    savedIps = savedIps.filter(item => item !== ip);
+    localStorage.setItem('savedDeviceIps', JSON.stringify(savedIps));
+    
+    // Add to forgotten/blacklisted list
+    let forgottenIps = JSON.parse(localStorage.getItem('forgottenDeviceIps') || '[]');
+    if (!forgottenIps.includes(ip)) {
+        forgottenIps.push(ip);
+        localStorage.setItem('forgottenDeviceIps', JSON.stringify(forgottenIps));
     }
+
+    showToast(`Forgot device IP ${ip}`, "success");
+    checkAdbStatus();
 }
 
 async function forgetConnectedDevice(ipPort) {
     const ip = ipPort.includes(':') ? ipPort.split(':')[0] : ipPort;
-    if (confirm(`Forget and disconnect device IP ${ip}?`)) {
-        try {
-            await invoke('adb_disconnect', { ipPort });
-            showToast("Disconnected device", "info");
-        } catch (e) {
-            console.error("Failed to disconnect during forget:", e);
-        }
-        
-        // Remove from saved list
-        let savedIps = JSON.parse(localStorage.getItem('savedDeviceIps') || '[]');
-        savedIps = savedIps.filter(item => item !== ip);
-        localStorage.setItem('savedDeviceIps', JSON.stringify(savedIps));
-        
-        // Add to forgotten/blacklisted list
-        let forgottenIps = JSON.parse(localStorage.getItem('forgottenDeviceIps') || '[]');
-        if (!forgottenIps.includes(ip)) {
-            forgottenIps.push(ip);
-        }
-        if (!forgottenIps.includes(ipPort)) {
-            forgottenIps.push(ipPort);
-        }
-        localStorage.setItem('forgottenDeviceIps', JSON.stringify(forgottenIps));
-
-        showToast(`Forgot device IP ${ip}`, "success");
-        checkAdbStatus();
+    try {
+        await invoke('adb_disconnect', { ipPort });
+        showToast("Disconnected device", "info");
+    } catch (e) {
+        console.error("Failed to disconnect during forget:", e);
     }
+    
+    // Remove from saved list
+    let savedIps = JSON.parse(localStorage.getItem('savedDeviceIps') || '[]');
+    savedIps = savedIps.filter(item => item !== ip);
+    localStorage.setItem('savedDeviceIps', JSON.stringify(savedIps));
+    
+    // Add to forgotten/blacklisted list
+    let forgottenIps = JSON.parse(localStorage.getItem('forgottenDeviceIps') || '[]');
+    if (!forgottenIps.includes(ip)) {
+        forgottenIps.push(ip);
+    }
+    if (!forgottenIps.includes(ipPort)) {
+        forgottenIps.push(ipPort);
+    }
+    localStorage.setItem('forgottenDeviceIps', JSON.stringify(forgottenIps));
+
+    showToast(`Forgot device IP ${ip}`, "success");
+    checkAdbStatus();
 }
 
 async function restartAdbServer() {

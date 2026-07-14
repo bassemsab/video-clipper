@@ -262,7 +262,32 @@ fn adb_pair(ip_port: String, code: String) -> ApiResponse<String> {
         None => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("ADB not installed".to_string()), needs_manual_connect: None }
     };
 
-    let output = match Command::new(&adb_path).arg("pair").arg(&ip_port).arg(&code).output() {
+    let mut child = match Command::new(&adb_path)
+        .arg("pair")
+        .arg(&ip_port)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some(e.to_string()), needs_manual_connect: None }
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        if let Err(e) = writeln!(stdin, "{}", code) {
+            return ApiResponse {
+                success: false,
+                message: "".to_string(),
+                data: None,
+                error: Some(format!("Failed to write pairing code to stdin: {}", e)),
+                needs_manual_connect: None,
+            };
+        }
+    }
+
+    let output = match child.wait_with_output() {
         Ok(out) => out,
         Err(e) => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some(e.to_string()), needs_manual_connect: None }
     };
