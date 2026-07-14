@@ -715,6 +715,11 @@ body {
     font-weight: 500;
 }
 
+.btn-restart-adb:hover {
+    background: rgba(255, 255, 255, 0.16) !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
 .adb-missing-text {
     color: var(--danger-color);
     font-weight: 500;

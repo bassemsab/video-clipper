@@ -378,6 +378,25 @@ fn adb_disconnect(ip_port: String) -> ApiResponse<String> {
 }
 
 #[tauri::command]
+fn restart_adb() -> ApiResponse<String> {
+    let adb_path = match find_adb() {
+        Some(path) => path,
+        None => return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("ADB not installed".to_string()), needs_manual_connect: None }
+    };
+
+    let _ = Command::new(&adb_path).arg("kill-server").output();
+    let _ = Command::new(&adb_path).arg("start-server").output();
+
+    ApiResponse {
+        success: true,
+        message: "ADB server restarted successfully".to_string(),
+        data: None,
+        error: None,
+        needs_manual_connect: None,
+    }
+}
+
+#[tauri::command]
 fn load_video(path: String, state: State<'_, AppState>) -> ApiResponse<String> {
     if !Path::new(&path).exists() {
         return ApiResponse { success: false, message: "".to_string(), data: None, error: Some("File does not exist".to_string()), needs_manual_connect: None };
@@ -1055,6 +1074,7 @@ pub fn run() {
             adb_pair,
             adb_connect,
             adb_disconnect,
+            restart_adb,
             load_video,
             start_recording,
             stop_recording,

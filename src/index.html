@@ -155,7 +155,10 @@
                 
                 <!-- ADB Status Area -->
                 <div class="settings-section" id="adbInstalledArea" style="display: none;">
-                    <p class="adb-ready-text">✓ ADB is installed and ready.</p>
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <p class="adb-ready-text" style="margin: 0;">✓ ADB is installed and ready.</p>
+                        <button class="btn-restart-adb" id="btnRestartAdb" onclick="restartAdbServer()" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; transition: all 0.2s; font-weight: 500;">Restart ADB</button>
+                    </div>
                 </div>
                 
                 <div class="settings-section" id="adbMissingArea" style="display: none;">

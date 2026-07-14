@@ -829,6 +829,16 @@ async function checkAdbStatus() {
                         disconnectSavedDevice(d.name, btnDisc);
                     };
                     actions.appendChild(btnDisc);
+
+                    const btnForget = document.createElement('button');
+                    btnForget.className = 'btn-device-forget';
+                    btnForget.innerHTML = '✕';
+                    btnForget.title = 'Forget Device';
+                    btnForget.onclick = (e) => {
+                        e.stopPropagation();
+                        forgetConnectedDevice(d.name);
+                    };
+                    actions.appendChild(btnForget);
                 } else {
                     const label = document.createElement('span');
                     label.style.color = 'var(--text-muted)';
@@ -841,14 +851,10 @@ async function checkAdbStatus() {
                 item.appendChild(actions);
                 savedDevicesList.appendChild(item);
                 
-                // Auto-save IP if wireless
+                // Track wireless IP to avoid duplicate rendering in offline section
                 if (d.name.includes(':')) {
                     const ip = d.name.split(':')[0];
                     renderedIps.add(ip);
-                    if (ip && !savedIps.includes(ip)) {
-                        savedIps.push(ip);
-                        localStorage.setItem('savedDeviceIps', JSON.stringify(savedIps));
-                    }
                 }
             });
             
@@ -887,16 +893,23 @@ async function checkAdbStatus() {
                 btnConn.className = 'btn-device-action';
                 btnConn.innerText = 'Connect';
                 btnConn.onclick = () => connectSavedDeviceDirect(d.name, btnConn);
-                
                 actions.appendChild(btnConn);
+
+                // Show forget button if this available device is in savedIps
+                if (savedIps.includes(ip)) {
+                    const btnForget = document.createElement('button');
+                    btnForget.className = 'btn-device-forget';
+                    btnForget.innerHTML = '✕';
+                    btnForget.title = 'Forget Device';
+                    btnForget.onclick = (e) => {
+                        e.stopPropagation();
+                        forgetSavedDevice(ip);
+                    };
+                    actions.appendChild(btnForget);
+                }
+                
                 item.appendChild(actions);
                 savedDevicesList.appendChild(item);
-                
-                // Ensure IP is in saved list
-                if (ip && !savedIps.includes(ip)) {
-                    savedIps.push(ip);
-                    localStorage.setItem('savedDeviceIps', JSON.stringify(savedIps));
-                }
             });
             
             // 3. Render paired/saved devices offline (grey dot, Paired badge)
@@ -999,12 +1012,24 @@ async function connectSavedDeviceDirect(ipPort, btn) {
         if (res.success) {
             pairStatus.innerText = "Connected successfully!";
             pairStatus.style.color = "var(--success-color)";
+            showToast("Connected successfully!", "success");
+            
+            // Save IP to savedDeviceIps
+            const ip = ipPort.split(':')[0];
+            if (ip) {
+                let savedIps = JSON.parse(localStorage.getItem('savedDeviceIps') || '[]');
+                if (!savedIps.includes(ip)) {
+                    savedIps.push(ip);
+                    localStorage.setItem('savedDeviceIps', JSON.stringify(savedIps));
+                }
+            }
+            
             checkAdbStatus();
         } else {
-            alert("Connection failed: " + res.error);
+            showToast("Connection failed: " + res.error, "error");
         }
     } catch (e) {
-        alert("Connection error: " + (e.message || e));
+        showToast("Connection error: " + (e.message || e), "error");
     } finally {
         btn.innerText = oldText;
         btn.disabled = false;
@@ -1033,13 +1058,14 @@ async function connectSavedDevice(ip, portInputId, btn) {
         if (res.success) {
             pairStatus.innerText = "Connected successfully!";
             pairStatus.style.color = "var(--success-color)";
+            showToast("Connected successfully!", "success");
             portInput.value = '';
             checkAdbStatus();
         } else {
-            alert("Connection failed: " + res.error);
+            showToast("Connection failed: " + res.error, "error");
         }
     } catch (e) {
-        alert("Connection error: " + (e.message || e));
+        showToast("Connection error: " + (e.message || e), "error");
     } finally {
         btn.innerText = oldText;
         btn.disabled = false;
@@ -1056,12 +1082,13 @@ async function disconnectSavedDevice(ipPort, btn) {
         if (res.success) {
             pairStatus.innerText = "Disconnected.";
             pairStatus.style.color = "var(--text-muted)";
+            showToast("Disconnected successfully.", "success");
             checkAdbStatus();
         } else {
-            alert("Disconnect failed: " + res.error);
+            showToast("Disconnect failed: " + res.error, "error");
         }
     } catch (e) {
-        alert("Disconnect error: " + (e.message || e));
+        showToast("Disconnect error: " + (e.message || e), "error");
     } finally {
         btn.innerText = oldText;
         btn.disabled = false;
@@ -1073,7 +1100,51 @@ function forgetSavedDevice(ip) {
         let savedIps = JSON.parse(localStorage.getItem('savedDeviceIps') || '[]');
         savedIps = savedIps.filter(item => item !== ip);
         localStorage.setItem('savedDeviceIps', JSON.stringify(savedIps));
+        showToast(`Forgot device IP ${ip}`, "success");
         checkAdbStatus();
+    }
+}
+
+async function forgetConnectedDevice(ipPort) {
+    const ip = ipPort.split(':')[0];
+    if (confirm(`Forget and disconnect device IP ${ip}?`)) {
+        try {
+            await invoke('adb_disconnect', { ipPort });
+            showToast("Disconnected device", "info");
+        } catch (e) {
+            console.error("Failed to disconnect during forget:", e);
+        }
+        let savedIps = JSON.parse(localStorage.getItem('savedDeviceIps') || '[]');
+        savedIps = savedIps.filter(item => item !== ip);
+        localStorage.setItem('savedDeviceIps', JSON.stringify(savedIps));
+        showToast(`Forgot device IP ${ip}`, "success");
+        checkAdbStatus();
+    }
+}
+
+async function restartAdbServer() {
+    const btn = document.getElementById('btnRestartAdb');
+    const oldText = btn ? btn.innerText : "Restart ADB";
+    if (btn) {
+        btn.innerText = "Restarting...";
+        btn.disabled = true;
+    }
+    
+    try {
+        const res = await invoke('restart_adb');
+        if (res.success) {
+            showToast("ADB Server restarted successfully", "success");
+            checkAdbStatus();
+        } else {
+            showToast("Failed to restart ADB: " + res.error, "error");
+        }
+    } catch (e) {
+        showToast("Error restarting ADB: " + (e.message || e), "error");
+    } finally {
+        if (btn) {
+            btn.innerText = oldText;
+            btn.disabled = false;
+        }
     }
 }
 
@@ -1109,6 +1180,18 @@ async function pairAdb() {
             if (res.success) {
                 pairStatus.innerText = "Connected!";
                 pairStatus.style.color = "var(--success-color)";
+                showToast("Connected successfully!", "success");
+                
+                // Save IP to saved device list
+                const ipPart = ip.split(':')[0];
+                if (ipPart) {
+                    let savedIps = JSON.parse(localStorage.getItem('savedDeviceIps') || '[]');
+                    if (!savedIps.includes(ipPart)) {
+                        savedIps.push(ipPart);
+                        localStorage.setItem('savedDeviceIps', JSON.stringify(savedIps));
+                    }
+                }
+
                 setTimeout(() => {
                     checkAdbStatus();
                     btn.innerHTML = 'Connect / Pair';
@@ -1124,6 +1207,7 @@ async function pairAdb() {
             if (res.success) {
                 pairStatus.innerText = res.message;
                 pairStatus.style.color = "var(--success-color)";
+                showToast("Paired successfully!", "success");
                 btn.innerHTML = 'Connect / Pair';
                 btn.disabled = false;
                 document.getElementById('adbCode').value = '';
@@ -1145,7 +1229,12 @@ async function pairAdb() {
             }
         }
     } catch (e) {
-        pairStatus.innerText = e.message || e;
+        const errMsg = e.message || e;
+        if (errMsg.toLowerCase().includes('protocol fault') || errMsg.toLowerCase().includes('status message')) {
+            pairStatus.innerHTML = `${errMsg}<br><span style="font-size: 12px; color: var(--text-muted); font-weight: normal; display: block; margin-top: 4px; line-height: 1.4;">Tip: Try clicking the "Restart ADB" button above, toggling Wireless Debugging off/on on your phone, or open a fresh pairing dialog to generate a new port and code.</span>`;
+        } else {
+            pairStatus.innerText = errMsg;
+        }
         pairStatus.style.color = "var(--danger-color)";
         btn.innerHTML = 'Connect / Pair';
         btn.disabled = false;
